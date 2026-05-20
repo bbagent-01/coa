@@ -405,14 +405,15 @@
           camera3d.position.set(0, 0, 2.6);
           camera3d.lookAt(0, 0, 0);
 
-          // Soft ambient + key light from upper-left for clear feature shading
-          scene3d.add(new THREE.AmbientLight(0xffffff, 0.18));
-          const key = new THREE.DirectionalLight(0xffffff, 1.1);
-          key.position.set(-1.3, 1.1, 1.2);
+          // Lower ambient + stronger key light = deeper shadows around nose/eyes/lips
+          // so features actually read at low ASCII resolution.
+          scene3d.add(new THREE.AmbientLight(0xffffff, 0.12));
+          const key = new THREE.DirectionalLight(0xffffff, 1.35);
+          key.position.set(-1.3, 1.05, 1.15);
           scene3d.add(key);
-          // Fill light from opposite side to keep silhouette readable
-          const fill = new THREE.DirectionalLight(0xffffff, 0.25);
-          fill.position.set(1.0, 0.2, 0.6);
+          // Small fill to keep the dark side from going pitch black
+          const fill = new THREE.DirectionalLight(0xffffff, 0.18);
+          fill.position.set(1.0, 0.1, 0.55);
           scene3d.add(fill);
 
           offCanvas = document.createElement('canvas');
@@ -430,7 +431,13 @@
               // is purely a function of geometry + lighting (no textures).
               root.traverse((obj) => {
                 if (obj.isMesh) {
-                  obj.material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                  // Phong gives specular highlights on nose tip, brow, cheekbone —
+                  // helps features pop when downsampled to ASCII.
+                  obj.material = new THREE.MeshPhongMaterial({
+                    color: 0xffffff,
+                    specular: 0xdddddd,
+                    shininess: 24
+                  });
                   obj.frustumCulled = false;
                 }
               });
@@ -456,10 +463,14 @@
         }
       }
 
+      // Supersample factor — render at 2× the ASCII grid so each cell's
+      // luminance is averaged over a 2x2 pixel block (cleaner features).
+      const SS = 2;
+
       function resize3D() {
         if (!renderer3d) return;
-        off3dW = Math.max(2, cols);
-        off3dH = Math.max(2, rows);
+        off3dW = Math.max(2, cols * SS);
+        off3dH = Math.max(2, rows * SS);
         renderer3d.setSize(off3dW, off3dH, false);
         offCanvas.width = off3dW;
         offCanvas.height = off3dH;
@@ -493,52 +504,6 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // ---- Background data flow (L → R) ----
-        ensureStreams();
-        // Advance streams; recycle off-screen ones at a fresh Y
-        for (let i = 0; i < streams.length; i++) {
-          const s = streams[i];
-          s.x += s.speed;
-          if (s.x - s.length > cols + 6) {
-            streams[i] = newStream();
-          }
-        }
-        // Group cells per row → only iterate streams on that row
-        const streamsByRow = new Array(rows);
-        for (let i = 0; i < streams.length; i++) {
-          const s = streams[i];
-          if (s.y < 0 || s.y >= rows) continue;
-          if (!streamsByRow[s.y]) streamsByRow[s.y] = [];
-          streamsByRow[s.y].push(s);
-        }
-        // Draw streams as a faint background layer
-        const lastColorBg = COLORS.length - 1;
-        for (let r = 0; r < rows; r++) {
-          const list = streamsByRow[r];
-          if (!list) continue;
-          for (let i = 0; i < list.length; i++) {
-            const s = list[i];
-            const headC = s.x;
-            const tailC = s.x - s.length;
-            const cStart = Math.max(0, Math.floor(tailC));
-            const cEnd = Math.min(cols, Math.ceil(headC) + 1);
-            for (let c = cStart; c < cEnd; c++) {
-              const d = headC - c;            // 0 at head, length at tail
-              if (d < 0 || d > s.length) continue;
-              const t = 1 - d / s.length;     // 1 → 0
-              const b = s.intensity * t * t;  // soft trail
-              if (b < 0.06) continue;
-              const idx = r * cols + c;
-              const cell = cells[idx];
-              if (!cell) continue;
-              const colIdx = Math.min(lastColorBg, Math.floor(b * (lastColorBg + 1)));
-              ctx.fillStyle = COLORS[colIdx];
-              ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
-            }
-          }
-        }
-
-        // ---- 3D head: render to offscreen, sample luminance per ASCII cell ----
         if (headError) {
           ctx.fillStyle = '#94a8d6';
           ctx.font = '12px ui-monospace, monospace';
@@ -546,52 +511,89 @@
           ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, monospace';
           return;
         }
-        if (!headReady || !renderer3d) {
-          ctx.fillStyle = '#aebbd9';
-          ctx.font = '11px ui-monospace, monospace';
-          ctx.fillText('loading head model…', 24, height * 0.5);
-          ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, monospace';
-          return;
+
+        // ---- Render head to offscreen (if ready) ----
+        let imgData = null;
+        let hasHead = false;
+        if (headReady && renderer3d) {
+          if (off3dW !== cols * SS || off3dH !== rows * SS) resize3D();
+          // Slow yaw + tiny nod
+          headGroup.rotation.y = Math.sin(now * 0.00035) * 0.6;
+          headGroup.rotation.x = Math.sin(now * 0.00028 + 1.3) * 0.08;
+          renderer3d.render(scene3d, camera3d);
+          offCtx2d.clearRect(0, 0, off3dW, off3dH);
+          offCtx2d.drawImage(renderer3d.domElement, 0, 0, off3dW, off3dH);
+          imgData = offCtx2d.getImageData(0, 0, off3dW, off3dH).data;
+          hasHead = true;
         }
 
-        if (off3dW !== cols || off3dH !== rows) resize3D();
-
-        // Animate: slow yaw with subtle pitch
-        headGroup.rotation.y = Math.sin(now * 0.00035) * 0.65;
-        headGroup.rotation.x = Math.sin(now * 0.00028 + 1.3) * 0.10;
-
-        renderer3d.render(scene3d, camera3d);
-        offCtx2d.clearRect(0, 0, off3dW, off3dH);
-        offCtx2d.drawImage(renderer3d.domElement, 0, 0, off3dW, off3dH);
-        const imgData = offCtx2d.getImageData(0, 0, off3dW, off3dH).data;
-
-        // Slow char shimmer — small swap rate so head surface holds shape
-        const swapCount = Math.floor(cells.length * 0.004);
+        // Slow char shimmer — small swap rate
+        const swapCount = Math.floor(cells.length * 0.005);
         for (let i = 0; i < swapCount; i++) {
           const idx = (Math.random() * cells.length) | 0;
           if (cells[idx]) cells[idx].ch = pickChar();
         }
 
         const lastColor = COLORS.length - 1;
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
-            const pi = (r * off3dW + c) * 4;
-            const a = imgData[pi + 3];
-            if (a < 12) continue; // transparent — outside head silhouette
-            const rr = imgData[pi];
-            const gg = imgData[pi + 1];
-            const bb = imgData[pi + 2];
-            // Luminance 0..1
-            let lum = (rr * 0.299 + gg * 0.587 + bb * 0.114) / 255;
-            if (lum < 0.10) continue;
-            if (lum > 1) lum = 1;
+        const ssW = off3dW;
+        const HEAD_GAIN = 0.55;     // how much the head adds on top of background
+        const HEAD_GAMMA = 0.85;    // <1 boosts shadows so features read
+        const CAP = 0.78;           // cap on total brightness — keeps overall contrast soft
 
+        for (let r = 0; r < rows; r++) {
+          const py = r * CHAR_H + CHAR_H * 0.5;
+          for (let c = 0; c < cols; c++) {
+            const px = c * CHAR_W + CHAR_W * 0.5;
             const cell = cells[r * cols + c];
             if (!cell) continue;
-            const colIdx = Math.min(lastColor, Math.floor(lum * (lastColor + 1)));
+
+            // ---- Background: gentle wavy fill, every cell painted ----
+            // Two low-freq sines that drift slowly L→R + per-cell shimmer.
+            const w1 = 0.5 + 0.5 * Math.sin(px * 0.022 - now * 0.0005 + py * 0.012);
+            const w2 = 0.5 + 0.5 * Math.sin(px * 0.010 - now * 0.0003 - py * 0.008);
+            const sh = 0.5 + 0.5 * Math.sin(cell.phase + now * 0.0011);
+            let bright = 0.10 + w1 * 0.09 + w2 * 0.05 + sh * 0.02; // ~0.10–0.26
+
+            // ---- Head contribution (2x supersampled luminance) ----
+            if (hasHead) {
+              const sx = c * SS;
+              const sy = r * SS;
+              const i0 = (sy * ssW + sx) * 4;
+              const i1 = i0 + 4;
+              const i2 = ((sy + 1) * ssW + sx) * 4;
+              const i3 = i2 + 4;
+              const aSum =
+                imgData[i0 + 3] + imgData[i1 + 3] +
+                imgData[i2 + 3] + imgData[i3 + 3];
+              if (aSum > 24) {
+                const lSum =
+                  (imgData[i0] + imgData[i1] + imgData[i2] + imgData[i3]) * 0.299 +
+                  (imgData[i0 + 1] + imgData[i1 + 1] + imgData[i2 + 1] + imgData[i3 + 1]) * 0.587 +
+                  (imgData[i0 + 2] + imgData[i1 + 2] + imgData[i2 + 2] + imgData[i3 + 2]) * 0.114;
+                let lum = lSum / (4 * 255);
+                // Contrast boost: pushes lit areas brighter, shadows stay dark
+                lum = Math.pow(lum, HEAD_GAMMA);
+                // Alpha weight: soft silhouette edge blends into background
+                const alphaW = Math.min(1, aSum / 800); // 0..1
+                bright += lum * HEAD_GAIN * alphaW;
+              }
+            }
+
+            if (bright > CAP) bright = CAP;
+            if (bright < 0.10) continue;
+
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = COLORS[colIdx];
             ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
           }
+        }
+
+        // ---- "Loading" overlay until head ready ----
+        if (!hasHead) {
+          ctx.fillStyle = '#aebbd9';
+          ctx.font = '11px ui-monospace, monospace';
+          ctx.fillText('loading head model…', 24, height * 0.5);
+          ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, monospace';
         }
       }
 
