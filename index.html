@@ -82,11 +82,15 @@
       let width = 0, height = 0, cols = 0, rows = 0;
       let cells = [];                          // per-cell state
       let mouseX = -9999, mouseY = -9999;
+      let prevMouseX = -9999, prevMouseY = -9999;
       let targetX = -9999, targetY = -9999;
       let trail = [];                          // history of mouse points
       const TRAIL_MS = 1100;                   // tail lifetime
-      const RADIUS = 230;                      // soft blob radius
+      const TRAIL_MAX = 26;                    // hard cap
+      const RADIUS = 210;                      // base blob radius
       const RADIUS2 = RADIUS * RADIUS;
+      const HEAD_RADIUS = 240;                 // wobble field extent
+      const HEAD_RADIUS2 = HEAD_RADIUS * HEAD_RADIUS;
 
       function buildCells() {
         cells = new Array(cols * rows);
@@ -155,18 +159,60 @@
       function draw(now) {
         frame++;
 
-        // Smooth follow (still quick — trail does the visual tailing)
-        if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; }
+        // Smooth follow (slower so trail extends behind during motion)
+        if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; prevMouseX = mouseX; prevMouseY = mouseY; }
         else if (targetX > -1000) {
-          mouseX += (targetX - mouseX) * 0.22;
-          mouseY += (targetY - mouseY) * 0.22;
+          prevMouseX = mouseX; prevMouseY = mouseY;
+          mouseX += (targetX - mouseX) * 0.16;
+          mouseY += (targetY - mouseY) * 0.16;
         }
 
-        // Push current mouse position into trail (one sample per frame)
+        // Push current mouse position into trail, with jitter so resting
+        // blob still shifts shape from frame to frame.
         if (targetX > -1000) {
-          trail.push({ x: mouseX, y: mouseY, t: now });
+          const mdx = mouseX - prevMouseX;
+          const mdy = mouseY - prevMouseY;
+          const moveDist = Math.sqrt(mdx * mdx + mdy * mdy);
+          const jitter = Math.max(0, 14 - moveDist) * 0.6; // bigger jitter when still
+          trail.push({
+            x: mouseX + (Math.random() - 0.5) * jitter,
+            y: mouseY + (Math.random() - 0.5) * jitter,
+            t: now
+          });
         }
-        while (trail.length && now - trail[0].t > TRAIL_MS) trail.shift();
+        while (trail.length && (now - trail[0].t > TRAIL_MS || trail.length > TRAIL_MAX)) trail.shift();
+
+        // Precompute per-trail-point velocity + stretch (once per frame, not per cell)
+        for (let i = 0; i < trail.length; i++) {
+          const p = trail[i];
+          const prev = i > 0 ? trail[i - 1] : p;
+          const vx = p.x - prev.x;
+          const vy = p.y - prev.y;
+          const sp = Math.sqrt(vx * vx + vy * vy);
+          p.sp = sp;
+          if (sp > 0.6) {
+            p.ux = vx / sp;
+            p.uy = vy / sp;
+            p.stretch = 1 + Math.min(2.6, sp * 0.10);
+          } else {
+            p.ux = 0; p.uy = 0; p.stretch = 1;
+          }
+        }
+
+        // Bounding box of the trail (so cells far away can skip the inner loop)
+        let bbMinX = Infinity, bbMinY = Infinity, bbMaxX = -Infinity, bbMaxY = -Infinity;
+        for (let i = 0; i < trail.length; i++) {
+          const p = trail[i];
+          if (p.x < bbMinX) bbMinX = p.x;
+          if (p.x > bbMaxX) bbMaxX = p.x;
+          if (p.y < bbMinY) bbMinY = p.y;
+          if (p.y > bbMaxY) bbMaxY = p.y;
+        }
+        const bbPad = Math.max(RADIUS, HEAD_RADIUS) + 20;
+        const bbMinC = Math.max(0, Math.floor((bbMinX - bbPad) / CHAR_W));
+        const bbMaxC = Math.min(cols, Math.ceil((bbMaxX + bbPad) / CHAR_W));
+        const bbMinR = Math.max(0, Math.floor((bbMinY - bbPad) / CHAR_H));
+        const bbMaxR = Math.min(rows, Math.ceil((bbMaxY + bbPad) / CHAR_H));
 
         // White wipe
         ctx.fillStyle = '#ffffff';
@@ -213,23 +259,61 @@
             // --- idle shimmer ---
             bright += 0.04 + 0.05 * Math.sin(cell.phase + now * 0.0011);
 
-            // --- mouse trail ---
+            // --- mouse trail (velocity-stretched ellipses) + head wobble ---
             let trailBoost = 0;
-            for (let i = 0; i < trail.length; i++) {
-              const p = trail[i];
-              const dx = px - p.x;
-              const dy = py - p.y;
-              const d2 = dx * dx + dy * dy;
-              if (d2 > RADIUS2) continue;
-              const age = (now - p.t) / TRAIL_MS;       // 0 newest → 1 oldest
-              const ageW = (1 - age) * (1 - age);       // quadratic decay
-              const d = Math.sqrt(d2);
-              let f = 1 - d / RADIUS;
-              f = f * f;                                // soft falloff (gaussian-ish)
-              trailBoost += f * ageW;
+            if (r >= bbMinR && r < bbMaxR && c >= bbMinC && c < bbMaxC) {
+              for (let i = 0; i < trail.length; i++) {
+                const p = trail[i];
+                const dx = px - p.x;
+                const dy = py - p.y;
+                let warpedD2;
+                if (p.sp > 0.6) {
+                  // project (dx,dy) onto velocity (along) and perpendicular
+                  const along = dx * p.ux + dy * p.uy;
+                  const perp = -dx * p.uy + dy * p.ux;
+                  const a = along / p.stretch;
+                  warpedD2 = a * a + perp * perp;
+                } else {
+                  warpedD2 = dx * dx + dy * dy;
+                }
+                if (warpedD2 > RADIUS2) continue;
+                const d = Math.sqrt(warpedD2);
+                let f = 1 - d / RADIUS;
+                f = f * f;
+                const age = (now - p.t) / TRAIL_MS;
+                const ageW = (1 - age) * (1 - age);
+                trailBoost += f * ageW;
+              }
+
+              // Wobble blob at the smoothed head — animates over time, breaks the circle
+              const hdx = px - mouseX;
+              const hdy = py - mouseY;
+              const hd2 = hdx * hdx + hdy * hdy;
+              if (hd2 < HEAD_RADIUS2 * 1.4) {
+                const ang = Math.atan2(hdy, hdx);
+                const wobble =
+                  1
+                  + 0.34 * Math.sin(ang * 3 + now * 0.0022)
+                  + 0.22 * Math.sin(ang * 5 - now * 0.0017)
+                  + 0.14 * Math.sin(ang * 2 + now * 0.0014);
+                const wr = HEAD_RADIUS * wobble;
+                const hd = Math.sqrt(hd2);
+                if (hd < wr) {
+                  let hf = 1 - hd / wr;
+                  hf = hf * hf;
+                  trailBoost += hf * 0.85;
+                }
+              }
             }
-            // Compress so adding many trail points doesn't go past ~1
-            trailBoost = 1 - Math.exp(-trailBoost * 1.6);
+
+            // Per-cell organic noise — breaks up the smooth gradient
+            const organic =
+              Math.sin(px * 0.018 + now * 0.0011) *
+              Math.sin(py * 0.022 - now * 0.0008) * 0.5 + 0.5; // 0..1
+            trailBoost *= 0.55 + organic * 0.9;
+
+            // Compress so summed contributions don't blow past ~1
+            trailBoost = 1 - Math.exp(-trailBoost * 1.4);
             bright += trailBoost * 0.95;
 
             // Mouse zone shimmers MORE — swap chars faster
