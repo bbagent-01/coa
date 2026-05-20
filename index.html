@@ -387,10 +387,74 @@
       const LL = Math.sqrt(LX * LX + LY * LY + LZ * LZ);
       const LNX = LX / LL, LNY = LY / LL, LNZ = LZ / LL;
 
+      // L→R data flow streams (background for head mode)
+      const STREAM_COUNT = 55;
+      let streams = null;
+      function newStream() {
+        return {
+          x: -8 - Math.random() * 90,
+          y: (Math.random() * rows) | 0,
+          speed: 0.25 + Math.random() * 0.9,
+          length: 6 + ((Math.random() * 18) | 0),
+          intensity: 0.18 + Math.random() * 0.32
+        };
+      }
+      function ensureStreams() {
+        if (!streams || streams.length !== STREAM_COUNT) {
+          streams = new Array(STREAM_COUNT);
+          for (let i = 0; i < STREAM_COUNT; i++) streams[i] = newStream();
+        }
+      }
+
       function drawHead(now) {
         // White wipe
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
+
+        // ---- Background data flow (L → R) ----
+        ensureStreams();
+        // Advance streams; recycle off-screen ones at a fresh Y
+        for (let i = 0; i < streams.length; i++) {
+          const s = streams[i];
+          s.x += s.speed;
+          if (s.x - s.length > cols + 6) {
+            streams[i] = newStream();
+          }
+        }
+        // Group cells per row → only iterate streams on that row
+        const streamsByRow = new Array(rows);
+        for (let i = 0; i < streams.length; i++) {
+          const s = streams[i];
+          if (s.y < 0 || s.y >= rows) continue;
+          if (!streamsByRow[s.y]) streamsByRow[s.y] = [];
+          streamsByRow[s.y].push(s);
+        }
+        // Draw streams as a faint background layer
+        const lastColorBg = COLORS.length - 1;
+        for (let r = 0; r < rows; r++) {
+          const list = streamsByRow[r];
+          if (!list) continue;
+          for (let i = 0; i < list.length; i++) {
+            const s = list[i];
+            const headC = s.x;
+            const tailC = s.x - s.length;
+            const cStart = Math.max(0, Math.floor(tailC));
+            const cEnd = Math.min(cols, Math.ceil(headC) + 1);
+            for (let c = cStart; c < cEnd; c++) {
+              const d = headC - c;            // 0 at head, length at tail
+              if (d < 0 || d > s.length) continue;
+              const t = 1 - d / s.length;     // 1 → 0
+              const b = s.intensity * t * t;  // soft trail
+              if (b < 0.06) continue;
+              const idx = r * cols + c;
+              const cell = cells[idx];
+              if (!cell) continue;
+              const colIdx = Math.min(lastColorBg, Math.floor(b * (lastColorBg + 1)));
+              ctx.fillStyle = COLORS[colIdx];
+              ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+            }
+          }
+        }
 
         // Head rotates slowly L/R and nods a tiny bit
         const theta = Math.sin(now * 0.00035) * 0.7;          // yaw
