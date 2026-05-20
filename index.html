@@ -1,128 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Name — Tagline</title>
-  <meta name="description" content="Your project description for SEO.">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            surface: { 1: '#09090b', 2: '#0f0f12', 3: '#16161a', 4: '#1e1e24' },
-            coral: { DEFAULT: '#e8735e', light: '#f09a8a', dark: '#c45a47' },
-            amber: { DEFAULT: '#d4a23a', light: '#e4be6a' },
-            zinc: { 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8', 400: '#a1a1aa', 500: '#71717a', 600: '#52525b', 700: '#3f3f46', 800: '#27272a', 900: '#18181b' }
-          },
-          fontFamily: {
-            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'monospace']
-          }
-        }
-      }
-    }
-  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>coa</title>
   <style>
-    html { scroll-behavior: smooth; }
-    body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+    :root {
+      --bg: #ffffff;
+      --ink: #0b1f4d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--ink);
+      cursor: crosshair;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      inset: 0;
+    }
+    .label {
+      position: fixed;
+      left: 24px;
+      bottom: 20px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #94a8d6;
+      pointer-events: none;
+      user-select: none;
+      z-index: 2;
+    }
   </style>
 </head>
-<body class="bg-surface-1 text-zinc-200 antialiased">
+<body>
+  <canvas id="ascii"></canvas>
+  <div class="label">move cursor</div>
 
-  <!-- ═══ DARK HERO ═══ -->
-  <header class="relative overflow-hidden">
-    <div class="absolute inset-0 bg-gradient-to-b from-surface-1 via-surface-2 to-surface-3"></div>
-    <nav class="relative z-10 max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-      <a href="/" class="text-lg font-bold tracking-tight text-white">ProjectName</a>
-      <div class="flex items-center gap-8">
-        <a href="#features" class="text-sm text-zinc-400 hover:text-white transition-colors">Features</a>
-        <a href="#about" class="text-sm text-zinc-400 hover:text-white transition-colors">About</a>
-        <a href="#cta" class="text-sm font-medium text-surface-1 bg-coral px-4 py-2 rounded-lg hover:bg-coral-light transition-colors">Get Started</a>
-      </div>
-    </nav>
-    <div class="relative z-10 max-w-4xl mx-auto px-6 pt-24 pb-32 text-center">
-      <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-coral/10 border border-coral/20 rounded-full text-xs font-medium text-coral font-mono mb-8">
-        <span class="w-1.5 h-1.5 bg-coral rounded-full"></span>
-        STATUS OR TAGLINE
-      </div>
-      <h1 class="text-5xl md:text-6xl font-extrabold text-white tracking-tight leading-[1.1] mb-6">
-        Your headline goes here<span class="text-coral">.</span>
-      </h1>
-      <p class="text-lg text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-10">
-        A clear, concise description of what this project does and why someone should care. Keep it to two sentences max.
-      </p>
-      <div class="flex items-center justify-center gap-4">
-        <a href="#cta" class="bg-coral text-surface-1 font-semibold px-6 py-3 rounded-lg hover:bg-coral-light transition-colors">Primary Action</a>
-        <a href="#features" class="border border-surface-4 text-zinc-300 font-medium px-6 py-3 rounded-lg hover:bg-surface-3 transition-colors">Learn More</a>
-      </div>
-    </div>
-  </header>
+  <script>
+    (function () {
+      const canvas = document.getElementById('ascii');
+      const ctx = canvas.getContext('2d');
 
-  <!-- ═══ LIGHT BODY ═══ -->
-  <main class="bg-zinc-50 text-zinc-900">
+      const CHARS = ' ·∙•◦○◉●';
+      const COLORS = [
+        'rgba(230, 238, 252, 1)',
+        'rgba(193, 213, 245, 1)',
+        'rgba(141, 173, 232, 1)',
+        'rgba(82, 121, 219, 1)',
+        'rgba(37, 71, 217, 1)',
+        'rgba(15, 36, 138, 1)',
+        'rgba(10, 24, 92, 1)'
+      ];
 
-    <!-- Features -->
-    <section id="features" class="max-w-6xl mx-auto px-6 py-24">
-      <div class="text-center mb-16">
-        <p class="text-sm font-semibold text-coral uppercase tracking-wider mb-3">Features</p>
-        <h2 class="text-3xl font-bold tracking-tight">What makes this different</h2>
-      </div>
-      <div class="grid md:grid-cols-3 gap-8">
-        <div class="bg-white border border-zinc-200 rounded-xl p-8">
-          <div class="w-10 h-10 bg-coral/10 rounded-lg flex items-center justify-center mb-4">
-            <span class="text-coral font-bold">01</span>
-          </div>
-          <h3 class="text-lg font-semibold mb-2">Feature One</h3>
-          <p class="text-zinc-500 leading-relaxed">Describe the feature and its benefit to the user. Keep it brief and benefit-focused.</p>
-        </div>
-        <div class="bg-white border border-zinc-200 rounded-xl p-8">
-          <div class="w-10 h-10 bg-coral/10 rounded-lg flex items-center justify-center mb-4">
-            <span class="text-coral font-bold">02</span>
-          </div>
-          <h3 class="text-lg font-semibold mb-2">Feature Two</h3>
-          <p class="text-zinc-500 leading-relaxed">Describe the feature and its benefit to the user. Keep it brief and benefit-focused.</p>
-        </div>
-        <div class="bg-white border border-zinc-200 rounded-xl p-8">
-          <div class="w-10 h-10 bg-coral/10 rounded-lg flex items-center justify-center mb-4">
-            <span class="text-coral font-bold">03</span>
-          </div>
-          <h3 class="text-lg font-semibold mb-2">Feature Three</h3>
-          <p class="text-zinc-500 leading-relaxed">Describe the feature and its benefit to the user. Keep it brief and benefit-focused.</p>
-        </div>
-      </div>
-    </section>
+      const CHAR_W = 10;
+      const CHAR_H = 14;
+      const FONT_SIZE = 13;
 
-    <!-- About -->
-    <section id="about" class="border-t border-zinc-200">
-      <div class="max-w-4xl mx-auto px-6 py-24 text-center">
-        <h2 class="text-3xl font-bold tracking-tight mb-6">About this project</h2>
-        <p class="text-lg text-zinc-500 leading-relaxed max-w-2xl mx-auto">
-          A longer description of the project, its background, and context. This section can be multiple paragraphs if needed.
-        </p>
-      </div>
-    </section>
+      let dpr = Math.max(1, window.devicePixelRatio || 1);
+      let width = 0, height = 0, cols = 0, rows = 0;
+      let mouseX = -9999, mouseY = -9999;
+      let targetX = -9999, targetY = -9999;
 
-    <!-- CTA -->
-    <section id="cta" class="border-t border-zinc-200 bg-white">
-      <div class="max-w-4xl mx-auto px-6 py-24 text-center">
-        <h2 class="text-3xl font-bold tracking-tight mb-4">Ready to get started?</h2>
-        <p class="text-zinc-500 mb-8">Call to action supporting text.</p>
-        <a href="mailto:hello@brightbase.co" class="inline-block bg-surface-1 text-white font-semibold px-8 py-3.5 rounded-lg hover:bg-zinc-800 transition-colors">Get in Touch</a>
-      </div>
-    </section>
-  </main>
+      const RADIUS = 180;
 
-  <!-- ═══ DARK FOOTER ═══ -->
-  <footer class="bg-surface-1 border-t border-surface-4">
-    <div class="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between">
-      <p class="text-sm text-zinc-600">&copy; 2026 ProjectName. All rights reserved.</p>
-      <p class="text-xs text-zinc-700 font-mono">built on bbase.dev</p>
-    </div>
-  </footer>
+      function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        dpr = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        cols = Math.ceil(width / CHAR_W);
+        rows = Math.ceil(height / CHAR_H);
+        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textBaseline = 'top';
+      }
 
+      function onMove(e) {
+        const t = e.touches ? e.touches[0] : e;
+        targetX = t.clientX;
+        targetY = t.clientY;
+      }
+      function onLeave() {
+        targetX = -9999;
+        targetY = -9999;
+      }
+
+      window.addEventListener('resize', resize);
+      window.addEventListener('mousemove', onMove, { passive: true });
+      window.addEventListener('touchmove', onMove, { passive: true });
+      window.addEventListener('mouseleave', onLeave);
+      window.addEventListener('blur', onLeave);
+
+      resize();
+
+      function draw() {
+        if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; }
+        else {
+          mouseX += (targetX - mouseX) * 0.18;
+          mouseY += (targetY - mouseY) * 0.18;
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        const r2 = RADIUS * RADIUS;
+        const lastChar = CHARS.length - 1;
+        const lastColor = COLORS.length - 1;
+
+        ctx.fillStyle = 'rgba(220, 230, 248, 1)';
+        for (let y = 0; y < rows; y += 2) {
+          for (let x = 0; x < cols; x += 2) {
+            ctx.fillText('·', x * CHAR_W, y * CHAR_H);
+          }
+        }
+
+        if (mouseX > -1000) {
+          const minCol = Math.max(0, Math.floor((mouseX - RADIUS) / CHAR_W));
+          const maxCol = Math.min(cols, Math.ceil((mouseX + RADIUS) / CHAR_W));
+          const minRow = Math.max(0, Math.floor((mouseY - RADIUS) / CHAR_H));
+          const maxRow = Math.min(rows, Math.ceil((mouseY + RADIUS) / CHAR_H));
+
+          for (let y = minRow; y < maxRow; y++) {
+            const py = y * CHAR_H + CHAR_H * 0.5;
+            for (let x = minCol; x < maxCol; x++) {
+              const px = x * CHAR_W + CHAR_W * 0.5;
+              const dx = px - mouseX;
+              const dy = py - mouseY;
+              const d2 = dx * dx + dy * dy;
+              if (d2 > r2) continue;
+              const d = Math.sqrt(d2);
+              let t = 1 - d / RADIUS;
+              t = t * t * (3 - 2 * t);
+
+              const ci = Math.min(lastChar, Math.round(t * lastChar));
+              if (ci === 0) continue;
+              const col = Math.min(lastColor, Math.round(t * lastColor));
+              ctx.fillStyle = COLORS[col];
+              ctx.fillText(CHARS[ci], x * CHAR_W, y * CHAR_H);
+            }
+          }
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      requestAnimationFrame(draw);
+    })();
+  </script>
 </body>
 </html>
