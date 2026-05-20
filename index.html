@@ -227,7 +227,14 @@
           if (p.y < bbMinY) bbMinY = p.y;
           if (p.y > bbMaxY) bbMaxY = p.y;
         }
-        const bbPad = Math.max(RADIUS, HEAD_RADIUS) + 20;
+        // Pad must cover BOTH the stretched trail ellipses AND the head
+        // wobble extent — otherwise contribution gets clipped against the
+        // rectangular bbox and you see straight edges in the blob.
+        let maxStretch = 1;
+        for (let i = 0; i < trail.length; i++) {
+          if (trail[i].stretch > maxStretch) maxStretch = trail[i].stretch;
+        }
+        const bbPad = Math.max(RADIUS * maxStretch, HEAD_RADIUS * 1.5) + 40;
         const bbMinC = Math.max(0, Math.floor((bbMinX - bbPad) / CHAR_W));
         const bbMaxC = Math.min(cols, Math.ceil((bbMaxX + bbPad) / CHAR_W));
         const bbMinR = Math.max(0, Math.floor((bbMinY - bbPad) / CHAR_H));
