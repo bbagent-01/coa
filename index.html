@@ -5,71 +5,115 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>coa</title>
   <style>
-    :root {
-      --bg: #ffffff;
-      --ink: #0b1f4d;
-    }
+    :root { --bg: #ffffff; --ink: #2a3b6b; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       background: var(--bg);
       overflow: hidden;
       font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--ink);
       cursor: crosshair;
     }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      position: fixed;
-      inset: 0;
-    }
+    canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
     .label {
-      position: fixed;
-      left: 24px;
-      bottom: 20px;
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #94a8d6;
-      pointer-events: none;
-      user-select: none;
-      z-index: 2;
+      position: fixed; left: 24px; bottom: 20px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #aebbd9; pointer-events: none; user-select: none; z-index: 2;
     }
   </style>
 </head>
 <body>
   <canvas id="ascii"></canvas>
-  <div class="label">move cursor</div>
+  <div class="label">coa · ascii</div>
 
   <script>
     (function () {
       const canvas = document.getElementById('ascii');
       const ctx = canvas.getContext('2d');
 
-      const CHARS = ' ·∙•◦○◉●';
-      const COLORS = [
-        'rgba(230, 238, 252, 1)',
-        'rgba(193, 213, 245, 1)',
-        'rgba(141, 173, 232, 1)',
-        'rgba(82, 121, 219, 1)',
-        'rgba(37, 71, 217, 1)',
-        'rgba(15, 36, 138, 1)',
-        'rgba(10, 24, 92, 1)'
+      // ---- Character pool: SQL keywords, code symbols, hex ----
+      const SQL_TOKENS = [
+        'SELECT','FROM','WHERE','JOIN','LEFT','RIGHT','INNER','OUTER','ON','AS',
+        'GROUP','ORDER','BY','LIMIT','OFFSET','HAVING','UNION','DISTINCT',
+        'INSERT','UPDATE','DELETE','CREATE','TABLE','VIEW','INDEX','WITH',
+        'AND','OR','NOT','NULL','IS','IN','LIKE','BETWEEN','CASE','WHEN','THEN','ELSE','END',
+        'COUNT','SUM','AVG','MIN','MAX','CAST','COALESCE','EXISTS'
+      ];
+      const SYMBOLS = '{}[]()<>;,.=+-*/_:|&%@#$!?\\"\'`~^';
+      const HEX = '0123456789abcdef';
+      const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+
+      // Build a flat char pool weighted toward symbols + hex (Matrix-y feel),
+      // and a list of multi-char SQL snippets we'll occasionally stamp across cells.
+      const CHAR_POOL = [];
+      for (let i = 0; i < 3; i++) for (const c of SYMBOLS) CHAR_POOL.push(c);
+      for (let i = 0; i < 2; i++) for (const c of HEX) CHAR_POOL.push(c);
+      for (let i = 0; i < 1; i++) for (const c of LETTERS) CHAR_POOL.push(c);
+      const SNIPPETS = [
+        'SELECT * FROM','WHERE id =','JOIN ON','GROUP BY','ORDER BY DESC',
+        'COUNT(*)','IS NULL','LIMIT 100','CREATE TABLE','INSERT INTO',
+        'NOT NULL','LEFT JOIN','UNION ALL','CASE WHEN','COALESCE(','AS coa',
+        'WITH cte AS','SUM(amount)','AVG(price)','HAVING COUNT'
       ];
 
-      const CHAR_W = 10;
-      const CHAR_H = 14;
-      const FONT_SIZE = 13;
+      function pickChar() {
+        return CHAR_POOL[(Math.random() * CHAR_POOL.length) | 0];
+      }
+
+      // ---- Color ramp: light powder → mid blue (no dark / no navy) ----
+      // Lower indices = paler. Highest still feels soft.
+      const COLORS = [
+        'rgba(225, 234, 250, 1)',
+        'rgba(206, 220, 246, 1)',
+        'rgba(180, 201, 240, 1)',
+        'rgba(151, 179, 232, 1)',
+        'rgba(124, 158, 222, 1)',
+        'rgba(102, 140, 212, 1)',
+        'rgba(86, 124, 200, 1)'
+      ];
+
+      // ---- Grid: tight 9pt characters ----
+      const CHAR_W = 6;
+      const CHAR_H = 9;
+      const FONT_SIZE = 9;
 
       let dpr = Math.max(1, window.devicePixelRatio || 1);
       let width = 0, height = 0, cols = 0, rows = 0;
+      let cells = [];                          // per-cell state
       let mouseX = -9999, mouseY = -9999;
       let targetX = -9999, targetY = -9999;
+      let trail = [];                          // history of mouse points
+      const TRAIL_MS = 1100;                   // tail lifetime
+      const RADIUS = 230;                      // soft blob radius
+      const RADIUS2 = RADIUS * RADIUS;
 
-      const RADIUS = 180;
+      function buildCells() {
+        cells = new Array(cols * rows);
+        for (let i = 0; i < cells.length; i++) {
+          cells[i] = {
+            ch: pickChar(),
+            phase: Math.random() * Math.PI * 2,
+            swap: 0.004 + Math.random() * 0.018, // baseline char-swap probability per frame
+            stick: 0                              // snippet stickiness (frames remaining before allowed to swap)
+          };
+        }
+        // Sprinkle a handful of SQL snippets across the grid for flavor.
+        const targetSnippets = Math.max(8, Math.floor((cols * rows) / 4000));
+        for (let s = 0; s < targetSnippets; s++) stampSnippet();
+      }
+
+      function stampSnippet() {
+        const snip = SNIPPETS[(Math.random() * SNIPPETS.length) | 0];
+        const startX = Math.floor(Math.random() * Math.max(1, cols - snip.length));
+        const y = Math.floor(Math.random() * rows);
+        for (let i = 0; i < snip.length; i++) {
+          const idx = y * cols + (startX + i);
+          if (!cells[idx]) continue;
+          cells[idx].ch = snip[i];
+          cells[idx].stick = 240 + Math.floor(Math.random() * 240); // hold for a few seconds
+        }
+      }
 
       function resize() {
         width = window.innerWidth;
@@ -80,10 +124,11 @@
         canvas.style.width = width + 'px';
         canvas.style.height = height + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        cols = Math.ceil(width / CHAR_W);
-        rows = Math.ceil(height / CHAR_H);
+        cols = Math.ceil(width / CHAR_W) + 1;
+        rows = Math.ceil(height / CHAR_H) + 1;
         ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
         ctx.textBaseline = 'top';
+        buildCells();
       }
 
       function onMove(e) {
@@ -104,51 +149,104 @@
 
       resize();
 
-      function draw() {
+      let lastSnippetStamp = 0;
+      let frame = 0;
+
+      function draw(now) {
+        frame++;
+
+        // Smooth follow (still quick — trail does the visual tailing)
         if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; }
-        else {
-          mouseX += (targetX - mouseX) * 0.18;
-          mouseY += (targetY - mouseY) * 0.18;
+        else if (targetX > -1000) {
+          mouseX += (targetX - mouseX) * 0.22;
+          mouseY += (targetY - mouseY) * 0.22;
         }
 
+        // Push current mouse position into trail (one sample per frame)
+        if (targetX > -1000) {
+          trail.push({ x: mouseX, y: mouseY, t: now });
+        }
+        while (trail.length && now - trail[0].t > TRAIL_MS) trail.shift();
+
+        // White wipe
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        const r2 = RADIUS * RADIUS;
-        const lastChar = CHARS.length - 1;
-        const lastColor = COLORS.length - 1;
-
-        ctx.fillStyle = 'rgba(220, 230, 248, 1)';
-        for (let y = 0; y < rows; y += 2) {
-          for (let x = 0; x < cols; x += 2) {
-            ctx.fillText('·', x * CHAR_W, y * CHAR_H);
-          }
+        // Shimmer: swap a small fraction of cell chars each frame
+        // (cells affected by mouse swap faster — see inner loop)
+        // Periodically refresh a SQL snippet so something readable cycles in.
+        if (now - lastSnippetStamp > 1800) {
+          stampSnippet();
+          lastSnippetStamp = now;
         }
 
-        if (mouseX > -1000) {
-          const minCol = Math.max(0, Math.floor((mouseX - RADIUS) / CHAR_W));
-          const maxCol = Math.min(cols, Math.ceil((mouseX + RADIUS) / CHAR_W));
-          const minRow = Math.max(0, Math.floor((mouseY - RADIUS) / CHAR_H));
-          const maxRow = Math.min(rows, Math.ceil((mouseY + RADIUS) / CHAR_H));
+        const lastColor = COLORS.length - 1;
+        const cx = width * 0.5;
+        const cy = height * 0.5;
+        const swirlT = now * 0.00015;
 
-          for (let y = minRow; y < maxRow; y++) {
-            const py = y * CHAR_H + CHAR_H * 0.5;
-            for (let x = minCol; x < maxCol; x++) {
-              const px = x * CHAR_W + CHAR_W * 0.5;
-              const dx = px - mouseX;
-              const dy = py - mouseY;
+        // Walk every cell. Threshold prevents drawing invisible glyphs.
+        // For each cell compute brightness from:
+        //   1) background swirl (very subtle, spiral-arm pattern)
+        //   2) idle shimmer (per-cell sine phase)
+        //   3) mouse trail (sum of past positions with age decay)
+        for (let r = 0; r < rows; r++) {
+          const py = r * CHAR_H + CHAR_H * 0.5;
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            const cell = cells[idx];
+            if (!cell) continue;
+            const px = c * CHAR_W + CHAR_W * 0.5;
+
+            // --- background swirl ---
+            // angle/dist from screen center, rotated slowly
+            const ax = px - cx;
+            const ay = py - cy;
+            const ang = Math.atan2(ay, ax);
+            const dC = Math.sqrt(ax * ax + ay * ay);
+            // Spiral arms: 3 arms, rotating
+            const swirl = 0.5 + 0.5 * Math.sin(ang * 3 + dC * 0.012 - swirlT * 4);
+            // Fade the swirl toward edges so it doesn't overpower
+            const swirlFalloff = Math.max(0, 1 - dC / (Math.max(width, height) * 0.75));
+            let bright = swirl * swirlFalloff * 0.18;
+
+            // --- idle shimmer ---
+            bright += 0.04 + 0.05 * Math.sin(cell.phase + now * 0.0011);
+
+            // --- mouse trail ---
+            let trailBoost = 0;
+            for (let i = 0; i < trail.length; i++) {
+              const p = trail[i];
+              const dx = px - p.x;
+              const dy = py - p.y;
               const d2 = dx * dx + dy * dy;
-              if (d2 > r2) continue;
+              if (d2 > RADIUS2) continue;
+              const age = (now - p.t) / TRAIL_MS;       // 0 newest → 1 oldest
+              const ageW = (1 - age) * (1 - age);       // quadratic decay
               const d = Math.sqrt(d2);
-              let t = 1 - d / RADIUS;
-              t = t * t * (3 - 2 * t);
-
-              const ci = Math.min(lastChar, Math.round(t * lastChar));
-              if (ci === 0) continue;
-              const col = Math.min(lastColor, Math.round(t * lastColor));
-              ctx.fillStyle = COLORS[col];
-              ctx.fillText(CHARS[ci], x * CHAR_W, y * CHAR_H);
+              let f = 1 - d / RADIUS;
+              f = f * f;                                // soft falloff (gaussian-ish)
+              trailBoost += f * ageW;
             }
+            // Compress so adding many trail points doesn't go past ~1
+            trailBoost = 1 - Math.exp(-trailBoost * 1.6);
+            bright += trailBoost * 0.95;
+
+            // Mouse zone shimmers MORE — swap chars faster
+            const mouseInfluence = trailBoost;
+            const swapProb = cell.swap + mouseInfluence * 0.18;
+            if (cell.stick > 0) {
+              cell.stick--;
+            } else if (Math.random() < swapProb) {
+              cell.ch = pickChar();
+            }
+
+            if (bright < 0.08) continue; // below visibility threshold
+
+            // Map brightness → color index. Even at peak we cap to keep it light.
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            ctx.fillStyle = COLORS[colIdx];
+            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
           }
         }
 
