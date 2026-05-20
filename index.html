@@ -21,11 +21,29 @@
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
       color: #aebbd9; pointer-events: none; user-select: none; z-index: 2;
     }
+    .nav {
+      position: fixed; left: 24px; top: 22px; z-index: 3;
+      display: flex; gap: 18px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      user-select: none;
+    }
+    .nav button {
+      background: transparent; border: none; padding: 0;
+      font: inherit; letter-spacing: inherit; text-transform: inherit;
+      color: #aebbd9; cursor: pointer;
+      transition: color 0.15s ease;
+    }
+    .nav button:hover { color: #6b8ad0; }
+    .nav button.active { color: #2547d9; }
   </style>
 </head>
 <body>
   <canvas id="ascii"></canvas>
-  <div class="label">coa · ascii</div>
+  <nav class="nav">
+    <button data-mode="cursor" class="active">01 · cursor</button>
+    <button data-mode="head">02 · head</button>
+  </nav>
+  <div class="label" id="label">coa · ascii</div>
 
   <script>
     (function () {
@@ -155,8 +173,9 @@
 
       let lastSnippetStamp = 0;
       let frame = 0;
+      let mode = 'cursor';
 
-      function draw(now) {
+      function drawCursor(now) {
         frame++;
 
         // Smooth follow (slower so trail extends behind during motion)
@@ -333,9 +352,201 @@
             ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
           }
         }
+      }
 
+      // ------------------------------------------------------------------
+      // MODE 2 — 3D ASCII head
+      // ------------------------------------------------------------------
+      // Approach: per cell, cast a ray from a virtual camera. Intersect
+      // against a head-shaped ellipsoid in head space (rotated each frame).
+      // Compute surface normal analytically, subtract gaussian dents for
+      // eye sockets, add a bump for the nose, darken a band for the mouth.
+      // Diffuse-shade against a fixed world-space light, plus rim light.
+      // Map shaded brightness → blue ramp + character.
+
+      // Head geometry (in head space; head looks toward -Z)
+      const HEAD_A = 0.78;   // x half-width
+      const HEAD_B = 1.05;   // y half-height
+      const HEAD_C = 0.92;   // z half-depth
+      const HEAD_A2 = HEAD_A * HEAD_A;
+      const HEAD_B2 = HEAD_B * HEAD_B;
+      const HEAD_C2 = HEAD_C * HEAD_C;
+
+      // Camera
+      const CAM_Z = -3.2;
+
+      // Fixed world-space light direction (normalized): upper-left, slightly front
+      const LX = -0.55, LY = 0.65, LZ = -0.52;
+      const LL = Math.sqrt(LX * LX + LY * LY + LZ * LZ);
+      const LNX = LX / LL, LNY = LY / LL, LNZ = LZ / LL;
+
+      function drawHead(now) {
+        // White wipe
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // Head rotates slowly L/R and nods a tiny bit
+        const theta = Math.sin(now * 0.00035) * 0.7;          // yaw
+        const phi = Math.sin(now * 0.00028 + 1.3) * 0.12;     // pitch
+        const ct = Math.cos(-theta), st = Math.sin(-theta);
+        const cp = Math.cos(-phi), sp = Math.sin(-phi);
+
+        // Light in head space (rotate world light by inverse yaw, then inverse pitch)
+        // R_y(-theta): x' = x*ct + z*st ; z' = -x*st + z*ct
+        let lhx = LNX * ct + LNZ * st;
+        let lhy = LNY;
+        let lhz = -LNX * st + LNZ * ct;
+        // R_x(-phi): y'' = y*cp - z*sp ; z'' = y*sp + z*cp
+        const lhx2 = lhx;
+        const lhy2 = lhy * cp - lhz * sp;
+        const lhz2 = lhy * sp + lhz * cp;
+
+        const aspect = width / height;
+        const fov = 1.0; // smaller = more zoom
+        const lastColor = COLORS.length - 1;
+
+        // Scale to fit ~70% of screen height
+        const scale = 1.0 / fov;
+
+        // Slow char shimmer — only swap a tiny fraction per frame so the head
+        // surface holds its shape but feels alive.
+        const swapCount = Math.floor(cells.length * 0.004);
+        for (let i = 0; i < swapCount; i++) {
+          const idx = (Math.random() * cells.length) | 0;
+          if (cells[idx]) cells[idx].ch = pickChar();
+        }
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            const cell = cells[idx];
+            if (!cell) continue;
+
+            // Normalized device coords (-1..1), aspect-corrected, y flipped
+            const u = ((c * CHAR_W + CHAR_W * 0.5) / width - 0.5) * 2 * aspect * scale;
+            const v = -((r * CHAR_H + CHAR_H * 0.5) / height - 0.5) * 2 * scale;
+
+            // Ray in world space: origin at (0,0,CAM_Z), direction toward (u,v,0)
+            let rdx = u, rdy = v, rdz = -CAM_Z; // +Z toward head at origin
+            const rl = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
+            rdx /= rl; rdy /= rl; rdz /= rl;
+
+            // Transform ray into head space: undo pitch then undo yaw
+            // R_x(-phi) then R_y(-theta) applied to ray dir AND origin
+            // Origin only has z component (CAM_Z)
+            let ox = 0, oy = 0, oz = CAM_Z;
+            // R_x(-phi) on origin
+            let oy1 = oy * cp - oz * sp;
+            let oz1 = oy * sp + oz * cp;
+            // R_y(-theta) on origin
+            let ox2 = ox * ct + oz1 * st;
+            let oz2 = -ox * st + oz1 * ct;
+
+            // R_x(-phi) on dir
+            let dy1 = rdy * cp - rdz * sp;
+            let dz1 = rdy * sp + rdz * cp;
+            // R_y(-theta) on dir
+            let dx2 = rdx * ct + dz1 * st;
+            let dz2 = -rdx * st + dz1 * ct;
+
+            // Ray vs ellipsoid: (ox+t*dx)^2/A^2 + (oy+t*dy)^2/B^2 + (oz+t*dz)^2/C^2 = 1
+            const A = dx2 * dx2 / HEAD_A2 + dy1 * dy1 / HEAD_B2 + dz2 * dz2 / HEAD_C2;
+            const B = 2 * (ox2 * dx2 / HEAD_A2 + oy1 * dy1 / HEAD_B2 + oz2 * dz2 / HEAD_C2);
+            const C = ox2 * ox2 / HEAD_A2 + oy1 * oy1 / HEAD_B2 + oz2 * oz2 / HEAD_C2 - 1;
+            const disc = B * B - 4 * A * C;
+            if (disc < 0) continue;
+            const tHit = (-B - Math.sqrt(disc)) / (2 * A);
+            if (tHit < 0) continue;
+
+            // Surface point in head space
+            const Px = ox2 + tHit * dx2;
+            const Py = oy1 + tHit * dy1;
+            const Pz = oz2 + tHit * dz2;
+
+            // Outward normal: gradient of implicit (Px/A^2, Py/B^2, Pz/C^2)
+            let Nx = Px / HEAD_A2;
+            let Ny = Py / HEAD_B2;
+            let Nz = Pz / HEAD_C2;
+            const nl = Math.sqrt(Nx * Nx + Ny * Ny + Nz * Nz);
+            Nx /= nl; Ny /= nl; Nz /= nl;
+
+            // Features (head-space coords; face is in -Z direction)
+            let bias = 0;
+
+            // Eye sockets — two recesses
+            const eyeY = 0.20, eyeZ = -0.62;
+            const eyeXL = -0.27, eyeXR = 0.27;
+            const ex1 = Px - eyeXL, ey1 = Py - eyeY, ez1 = Pz - eyeZ;
+            const eL = ex1 * ex1 + ey1 * ey1 * 1.6 + ez1 * ez1;
+            if (eL < 0.05) bias -= (0.05 - eL) * 9;
+            const ex2 = Px - eyeXR;
+            const eR = ex2 * ex2 + ey1 * ey1 * 1.6 + ez1 * ez1;
+            if (eR < 0.05) bias -= (0.05 - eR) * 9;
+
+            // Brow ridge — slight highlight above eyes
+            const browY = 0.36;
+            const bd = Math.abs(Py - browY);
+            if (bd < 0.06 && Pz < -0.45 && Math.abs(Px) < 0.45) {
+              bias += (0.06 - bd) * 2.2;
+            }
+
+            // Nose — bump down the center, front of face
+            const noseDX = Px;
+            const noseDY = Py + 0.05;
+            const noseProf = Math.exp(-(noseDX * noseDX) / 0.018 - (noseDY * noseDY) / 0.06);
+            if (Pz < -0.3) {
+              bias += noseProf * 0.55;
+            }
+
+            // Mouth — darker horizontal band
+            if (Py > -0.48 && Py < -0.30 && Pz < -0.55 && Math.abs(Px) < 0.26) {
+              const mc = 1 - Math.abs(Py + 0.39) / 0.09;
+              bias -= mc * 0.35;
+            }
+
+            // Chin shadow — under jaw
+            if (Py < -0.55 && Pz < -0.4) {
+              bias -= (-0.55 - Py) * 0.6;
+            }
+
+            // Diffuse lighting against light in head space
+            let diffuse = Nx * lhx2 + Ny * lhy2 + Nz * lhz2;
+            if (diffuse < 0) diffuse = 0;
+
+            // Rim light: bright at silhouette where N faces away from view
+            // View direction in head space (-dx2, -dy1, -dz2)
+            const rim = 1 - Math.max(0, -(Nx * dx2 + Ny * dy1 + Nz * dz2));
+            const rimI = Math.pow(rim, 3.5) * 0.35;
+
+            let bright = 0.10 + diffuse * 0.85 + rimI + bias;
+            if (bright < 0.10) continue;
+            if (bright > 1) bright = 1;
+
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            ctx.fillStyle = COLORS[colIdx];
+            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+          }
+        }
+      }
+
+      function draw(now) {
+        if (mode === 'cursor') drawCursor(now);
+        else drawHead(now);
         requestAnimationFrame(draw);
       }
+
+      // ------------------------------------------------------------------
+      // Nav + mode switching
+      // ------------------------------------------------------------------
+      const labelEl = document.getElementById('label');
+      const navButtons = document.querySelectorAll('.nav button');
+      function setMode(m) {
+        mode = m;
+        navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+        labelEl.textContent = m === 'cursor' ? 'coa · cursor' : 'coa · head';
+        document.body.style.cursor = m === 'cursor' ? 'crosshair' : 'default';
+      }
+      navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
       requestAnimationFrame(draw);
     })();
