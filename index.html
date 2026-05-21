@@ -619,14 +619,24 @@
       let gazeYaw = 0, gazePitch = 0;
       let eyeLook = { h: 0, v: 0 };
       let eyeL = null, eyeR = null;          // facecap eyeball meshes (hidden)
+      let eyeLCenter = null, eyeRCenter = null; // geometry centroids, in faceRoot-local space
       let curBlink = 0;
       const pupilLEl = document.getElementById('pupilL');
       const pupilREl = document.getElementById('pupilR');
       const _proj = new THREE.Vector3();
-      function projectToScreen(obj) {
-        obj.getWorldPosition(_proj);
+      // Project a faceRoot-local point to screen pixels (handles head rotation).
+      function projectLocal(localVec) {
+        _proj.copy(localVec).applyMatrix4(faceRoot.matrixWorld);
         _proj.project(faceCamera);
         return { x: (_proj.x * 0.5 + 0.5) * width, y: (-_proj.y * 0.5 + 0.5) * height };
+      }
+      // Geometry centroid of a mesh, expressed in faceRoot-local coordinates.
+      function eyeCentroidLocal(mesh) {
+        mesh.geometry.computeBoundingBox();
+        const c = mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
+        mesh.localToWorld(c);
+        faceRoot.worldToLocal(c);
+        return c;
       }
 
       function initFace() {
@@ -707,6 +717,11 @@
               faceRoot.position.z -= center.z;
               faceRoot.position.y += 0.12; // eyes toward upper third, mouth stays visible
               faceScene.add(faceRoot);
+              faceRoot.updateMatrixWorld(true);
+              // Store eyeball geometry centroids (in faceRoot-local space) for
+              // accurate pupil placement.
+              if (eyeL) eyeLCenter = eyeCentroidLocal(eyeL);
+              if (eyeR) eyeRCenter = eyeCentroidLocal(eyeR);
               faceReady = true;
               // Temporary debug handles for live tuning
               window.__coaFace = faceRoot;
@@ -779,9 +794,9 @@
         faceRenderer.render(faceScene, faceCamera);
 
         // ---- Solid-circle pupils as a 2D overlay, tracking the cursor ----
-        if (faceReady && eyeL && eyeR) {
-          const pa = projectToScreen(eyeL);
-          const pb = projectToScreen(eyeR);
+        if (faceReady && eyeLCenter && eyeRCenter) {
+          const pa = projectLocal(eyeLCenter);
+          const pb = projectLocal(eyeRCenter);
           const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
           const pr = Math.max(7, inter * 0.14);          // pupil radius scales with zoom
           const offX = eyeLook.h * pr * 0.75;            // shift toward cursor
