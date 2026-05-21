@@ -78,6 +78,7 @@
       padding: 7px 12px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
     }
     #sizeCtrl input[type="range"] { width: 130px; accent-color: #2962ff; cursor: pointer; }
+    #sizeVal { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #2962ff; min-width: 34px; text-align: right; }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -158,6 +159,7 @@
   <div id="sizeCtrl">
     <span>head size</span>
     <input type="range" id="sizeSlider" min="1" max="3.2" step="0.05" value="2">
+    <span id="sizeVal">2.00</span>
   </div>
 
   <script type="module">
@@ -910,7 +912,7 @@
           if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
             const dict = faceMesh.morphTargetDictionary;
             const infl = faceMesh.morphTargetInfluences;
-            const cycle = 10000;        // ~10s between blinks
+            const cycle = 18000;        // ~18s between blinks (rare)
             const blinkWin = 0.06;      // ~600ms blink duration
             const tt = (now % cycle) / cycle;
             let blink = 0;
@@ -1296,10 +1298,12 @@
       // tracks so the eyes stay flanking the H1 at any size.
       const sizeCtrl = document.getElementById('sizeCtrl');
       const sizeSlider = document.getElementById('sizeSlider');
+      const sizeVal = document.getElementById('sizeVal');
       function applyHeadSize() {
         const size = parseFloat(sizeSlider.value);
         mzZoom = 2.8 / size;
         mzLookY = -0.126 - 0.0674 * mzZoom;
+        if (sizeVal) sizeVal.textContent = size.toFixed(2);
       }
       sizeSlider.addEventListener('input', applyHeadSize);
       applyHeadSize();
