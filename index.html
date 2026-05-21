@@ -16,6 +16,7 @@
       cursor: crosshair;
     }
     canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+    #face { display: none; }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -62,23 +63,19 @@
 </head>
 <body>
   <canvas id="ascii"></canvas>
+  <canvas id="face"></canvas>
   <nav class="nav">
     <button data-mode="cursor" class="active">01 · cursor</button>
-    <button data-mode="head">02 · head</button>
-    <span class="sep" id="modelSep" style="display:none">/</span>
-    <span class="model-picker" id="modelPicker">
-      <button data-model="perry" class="active">perry</button>
-      <button data-model="nefertiti">nefertiti</button>
-      <button data-model="facecap">facecap</button>
-    </span>
+    <button data-mode="face">02 · face</button>
   </nav>
-  <div class="label" id="label">coa · ascii</div>
+  <div class="label" id="label">coa · cursor</div>
 
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { SimplifyModifier } from 'three/addons/modifiers/SimplifyModifier.js';
-    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+    import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     {
       const canvas = document.getElementById('ascii');
@@ -593,7 +590,124 @@
         camera3d.updateProjectionMatrix();
       }
 
-      initHead3D();
+      // ------------------------------------------------------------------
+      // MODE 2 — real 3D face (facecap, rendered normally — no ASCII)
+      // ------------------------------------------------------------------
+      const faceCanvasEl = document.getElementById('face');
+      let faceRenderer = null, faceScene = null, faceCamera = null;
+      let faceRoot = null, faceMesh = null;
+      let faceReady = false, faceError = null;
+      let faceCanvasW = 0, faceCanvasH = 0;
+      let gazeYaw = 0, gazePitch = 0;
+
+      function initFace() {
+        try {
+          faceRenderer = new THREE.WebGLRenderer({ canvas: faceCanvasEl, antialias: true });
+          faceRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+          faceRenderer.setSize(width, height, false);
+          faceRenderer.outputColorSpace = THREE.SRGBColorSpace;
+          faceRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+          faceRenderer.toneMappingExposure = 1.05;
+          faceCanvasW = width; faceCanvasH = height;
+
+          faceScene = new THREE.Scene();
+          faceScene.background = new THREE.Color(0xeef3fb); // light brand tint
+
+          // Soft studio environment → realistic skin shading, no external files
+          const pmrem = new THREE.PMREMGenerator(faceRenderer);
+          faceScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.02).texture;
+
+          faceCamera = new THREE.PerspectiveCamera(24, width / height, 0.1, 100);
+          faceCamera.position.set(0, 0, 2.8);
+
+          const key = new THREE.DirectionalLight(0xffffff, 2.2);
+          key.position.set(-1.2, 1.4, 2.2);
+          faceScene.add(key);
+          const rim = new THREE.DirectionalLight(0xd6e4ff, 1.0);
+          rim.position.set(1.6, 0.4, -1.4);
+          faceScene.add(rim);
+
+          // facecap.glb: KTX2-compressed textures + Meshopt-compressed geometry
+          const ktx2 = new KTX2Loader()
+            .setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/')
+            .detectSupport(faceRenderer);
+          const loader = new GLTFLoader()
+            .setKTX2Loader(ktx2)
+            .setMeshoptDecoder(MeshoptDecoder);
+          loader.load(
+            'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb',
+            (gltf) => {
+              faceRoot = gltf.scene;
+              // Find the mesh that carries blink/expression morph targets
+              faceRoot.traverse((o) => { if (o.isMesh && o.morphTargetInfluences) faceMesh = o; });
+              if (!faceMesh) faceRoot.traverse((o) => { if (o.isMesh && !faceMesh) faceMesh = o; });
+              // Center + scale to frame the face
+              const box = new THREE.Box3().setFromObject(faceRoot);
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3());
+              faceRoot.position.sub(center);
+              const fit = 1.15 / Math.max(size.x, size.y, size.z);
+              faceRoot.scale.setScalar(fit);
+              faceScene.add(faceRoot);
+              faceReady = true;
+            },
+            undefined,
+            (err) => { console.error('face load failed', err); faceError = 'failed to load face'; }
+          );
+        } catch (e) {
+          console.error(e);
+          faceError = 'webgl unavailable';
+        }
+      }
+
+      function resizeFace() {
+        if (!faceRenderer) return;
+        faceRenderer.setSize(width, height, false);
+        faceCamera.aspect = width / height;
+        faceCamera.updateProjectionMatrix();
+        faceCanvasW = width; faceCanvasH = height;
+      }
+
+      function drawFace(now) {
+        if (faceError || !faceRenderer) return;
+        if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
+
+        if (faceReady && faceRoot) {
+          // Mouse → gaze target, slowly tracked (lerp). Idle drift when still.
+          let nx = 0, ny = 0;
+          if (targetX > -1000) {
+            nx = (targetX / width) * 2 - 1;
+            ny = (targetY / height) * 2 - 1;
+          }
+          const idleYaw = Math.sin(now * 0.0003) * 0.10;
+          const idlePitch = Math.sin(now * 0.00041 + 1.1) * 0.04;
+          const targetYaw = nx * 0.40 + idleYaw;     // limited so face-only mesh doesn't show hollow side
+          const targetPitch = ny * 0.24 + idlePitch;
+          gazeYaw += (targetYaw - gazeYaw) * 0.045;   // slow follow
+          gazePitch += (targetPitch - gazePitch) * 0.045;
+          faceRoot.rotation.y = gazeYaw;
+          faceRoot.rotation.x = gazePitch;
+
+          // Idle blink via ARKit morph targets
+          if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
+            const cycle = 4200;
+            const tt = (now % cycle) / cycle;
+            let blink = 0;
+            if (tt > 0.955) blink = Math.sin(((tt - 0.955) / 0.045) * Math.PI);
+            const dict = faceMesh.morphTargetDictionary;
+            for (const name in dict) {
+              if (name.toLowerCase().includes('blink')) {
+                faceMesh.morphTargetInfluences[dict[name]] = blink;
+              }
+            }
+          }
+        }
+
+        faceRenderer.render(faceScene, faceCamera);
+      }
+
+      initFace();
+      window.addEventListener('resize', resizeFace);
 
       // L→R data flow streams (background for head mode)
       const STREAM_COUNT = 55;
@@ -709,7 +823,7 @@
 
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
-        else drawHead(now);
+        else drawFace(now);
         requestAnimationFrame(draw);
       }
 
@@ -718,23 +832,17 @@
       // ------------------------------------------------------------------
       const labelEl = document.getElementById('label');
       const navButtons = document.querySelectorAll('.nav > button');
-      const modelPicker = document.getElementById('modelPicker');
-      const modelSep = document.getElementById('modelSep');
-      const modelButtons = document.querySelectorAll('.model-picker button');
+      const asciiCanvasEl = document.getElementById('ascii');
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-        labelEl.textContent = m === 'cursor' ? 'coa · cursor' : 'coa · ' + currentModel;
+        labelEl.textContent = m === 'cursor' ? 'coa · cursor' : 'coa · face';
         document.body.style.cursor = m === 'cursor' ? 'crosshair' : 'default';
-        modelPicker.style.display = m === 'head' ? 'inline-flex' : 'none';
-        modelSep.style.display = m === 'head' ? 'inline' : 'none';
+        asciiCanvasEl.style.display = m === 'cursor' ? 'block' : 'none';
+        faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
+        if (m === 'face') resizeFace();
       }
       navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
-      modelButtons.forEach(b => b.addEventListener('click', () => {
-        modelButtons.forEach(x => x.classList.toggle('active', x === b));
-        loadHead(b.dataset.model);
-        labelEl.textContent = 'coa · ' + b.dataset.model;
-      }));
 
       requestAnimationFrame(draw);
     }
