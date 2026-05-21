@@ -278,6 +278,17 @@
         'rgba(20, 58, 176,'      // deep blue edge
       ];
 
+      // ---- Stream ramp: muted darker-blue head fading to light gray. No cyan,
+      // no bright/saturated blue — keeps the streams understated. ----
+      const STREAM_COLORS = [
+        'rgba(70, 96, 150,',     // darker muted blue (head)
+        'rgba(98, 122, 168,',    // muted blue
+        'rgba(130, 150, 184,',   // blue-gray
+        'rgba(162, 176, 198,',   // light blue-gray
+        'rgba(190, 198, 212,',   // light gray
+        'rgba(214, 218, 226,'    // lighter gray (tail tip)
+      ];
+
       // ---- Grid: tight 9pt characters for cursor mode ----
       const CHAR_W = 6;
       const CHAR_H = 9;
@@ -1346,7 +1357,7 @@
       // flowing left to right. Each stream lights up one grid row as it passes.
       // ------------------------------------------------------------------
       let dStreams = null;
-      const D_STREAM_N = 46;
+      const D_STREAM_N = 92;                 // twice as many
       function newDStream(startCol) {
         const tail = 60 + ((Math.random() * 90) | 0);   // very long tails (grid cells)
         return {
@@ -1368,7 +1379,7 @@
       function drawStreamsOverlay(now) {
         ensureDStreams();
         ctx.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
-        const flameLast = FLAME.length - 1;
+        const streamLast = STREAM_COLORS.length - 1;
         for (let si = 0; si < D_STREAM_N; si++) {
           const s = dStreams[si];
           s.hc += s.speed;
@@ -1385,8 +1396,8 @@
             if (alpha < 0.03) continue;
             const cell = headCells[gr * headCols + c];
             if (!cell) continue;
-            const fi = Math.min(flameLast, (((1 - t) * FLAME.length) | 0));
-            ctx.fillStyle = FLAME[fi] + alpha.toFixed(3) + ')';
+            const fi = Math.min(streamLast, (((1 - t) * STREAM_COLORS.length) | 0));
+            ctx.fillStyle = STREAM_COLORS[fi] + alpha.toFixed(3) + ')';
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, baseY);
           }
         }
