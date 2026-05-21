@@ -17,6 +17,16 @@
     }
     canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
     #face { display: none; }
+    /* Radial fade: face center is clear, edges dissolve into the flat
+       background (hides ears + removes the hard silhouette). Color MUST
+       match the WebGL scene background. */
+    #vignette {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
+      background: radial-gradient(ellipse 33% 50% at 50% 44%,
+        rgba(238,243,251,0) 40%,
+        rgba(238,243,251,0.85) 66%,
+        rgba(238,243,251,1) 80%);
+    }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -64,6 +74,7 @@
 <body>
   <canvas id="ascii"></canvas>
   <canvas id="face"></canvas>
+  <div id="vignette"></div>
   <nav class="nav">
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
@@ -599,6 +610,7 @@
       let faceReady = false, faceError = null;
       let faceCanvasW = 0, faceCanvasH = 0;
       let gazeYaw = 0, gazePitch = 0;
+      let eyeLook = { h: 0, v: 0 };
 
       function initFace() {
         try {
@@ -607,7 +619,7 @@
           faceRenderer.setSize(width, height, false);
           faceRenderer.outputColorSpace = THREE.SRGBColorSpace;
           faceRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-          faceRenderer.toneMappingExposure = 1.05;
+          faceRenderer.toneMappingExposure = 1.25; // brighter → ethereal, luminous
           faceCanvasW = width; faceCanvasH = height;
 
           faceScene = new THREE.Scene();
@@ -641,6 +653,20 @@
               // Find the mesh that carries blink/expression morph targets
               faceRoot.traverse((o) => { if (o.isMesh && o.morphTargetInfluences) faceMesh = o; });
               if (!faceMesh) faceRoot.traverse((o) => { if (o.isMesh && !faceMesh) faceMesh = o; });
+              // Ethereal, androgynous material — soft cool-white matte with a
+              // faint inner glow. Replaces the GLB's skin texture.
+              faceRoot.traverse((o) => {
+                if (o.isMesh) {
+                  o.material = new THREE.MeshStandardMaterial({
+                    color: 0xe4eaf3,
+                    roughness: 0.74,
+                    metalness: 0.0,
+                    emissive: new THREE.Color(0x33508a),
+                    emissiveIntensity: 0.07,
+                    envMapIntensity: 1.2
+                  });
+                }
+              });
               // Center + scale to frame the face
               const box = new THREE.Box3().setFromObject(faceRoot);
               const center = box.getCenter(new THREE.Vector3());
@@ -674,32 +700,53 @@
         if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
 
         if (faceReady && faceRoot) {
-          // Mouse → gaze target, slowly tracked (lerp). Idle drift when still.
+          // Mouse → gaze target (-1..1). Centered at rest.
           let nx = 0, ny = 0;
           if (targetX > -1000) {
             nx = (targetX / width) * 2 - 1;
             ny = (targetY / height) * 2 - 1;
           }
-          const idleYaw = Math.sin(now * 0.0003) * 0.10;
-          const idlePitch = Math.sin(now * 0.00041 + 1.1) * 0.04;
-          const targetYaw = nx * 0.40 + idleYaw;     // limited so face-only mesh doesn't show hollow side
-          const targetPitch = ny * 0.24 + idlePitch;
-          gazeYaw += (targetYaw - gazeYaw) * 0.045;   // slow follow
-          gazePitch += (targetPitch - gazePitch) * 0.045;
+          // Very subtle, slow idle drift; symmetric around center.
+          const idleYaw = Math.sin(now * 0.00016) * 0.022;
+          const idlePitch = Math.sin(now * 0.00021 + 1.1) * 0.012;
+          // Small head range, slow follow — most of the tracking is the eyes.
+          const targetYaw = nx * 0.16 + idleYaw;
+          const targetPitch = ny * 0.10 + idlePitch;
+          gazeYaw += (targetYaw - gazeYaw) * 0.018;   // much slower
+          gazePitch += (targetPitch - gazePitch) * 0.018;
           faceRoot.rotation.y = gazeYaw;
           faceRoot.rotation.x = gazePitch;
 
-          // Idle blink via ARKit morph targets
           if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
-            const cycle = 4200;
+            const dict = faceMesh.morphTargetDictionary;
+            const infl = faceMesh.morphTargetInfluences;
+            const setM = (name, v) => { if (dict[name] !== undefined) infl[dict[name]] = v; };
+
+            // ---- Eyes follow the cursor (faster than head, still gentle) ----
+            eyeLook.h += (nx - eyeLook.h) * 0.06;
+            eyeLook.v += (ny - eyeLook.v) * 0.06;
+            const eh = Math.max(-1, Math.min(1, eyeLook.h));
+            const ev = Math.max(-1, Math.min(1, eyeLook.v));
+            const ehR = Math.max(0, eh), ehL = Math.max(0, -eh);
+            const evD = Math.max(0, ev), evU = Math.max(0, -ev);
+            const A = 0.7; // look intensity
+            // Viewer-right (eh>0): char's left eye looks out, right eye looks in
+            setM('eyeLookOutLeft',  ehR * A);
+            setM('eyeLookInLeft',   ehL * A);
+            setM('eyeLookInRight',  ehR * A);
+            setM('eyeLookOutRight', ehL * A);
+            setM('eyeLookDownLeft',  evD * A);
+            setM('eyeLookUpLeft',    evU * A);
+            setM('eyeLookDownRight', evD * A);
+            setM('eyeLookUpRight',   evU * A);
+
+            // ---- Idle blink ----
+            const cycle = 4600;
             const tt = (now % cycle) / cycle;
             let blink = 0;
             if (tt > 0.955) blink = Math.sin(((tt - 0.955) / 0.045) * Math.PI);
-            const dict = faceMesh.morphTargetDictionary;
             for (const name in dict) {
-              if (name.toLowerCase().includes('blink')) {
-                faceMesh.morphTargetInfluences[dict[name]] = blink;
-              }
+              if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
             }
           }
         }
@@ -834,6 +881,7 @@
       const labelEl = document.getElementById('label');
       const navButtons = document.querySelectorAll('.nav > button');
       const asciiCanvasEl = document.getElementById('ascii');
+      const vignetteEl = document.getElementById('vignette');
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
@@ -841,6 +889,7 @@
         document.body.style.cursor = m === 'cursor' ? 'crosshair' : 'default';
         asciiCanvasEl.style.display = m === 'cursor' ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
+        vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         if (m === 'face') resizeFace();
       }
       navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
