@@ -902,7 +902,7 @@
             // Push each pupil OUTWARD (away from the nose) so at rest the eyes
             // look straight out and never cross. Both shift the same way for h,
             // keeping the gaze parallel.
-            const outB = eyeRadiusLocal * 0.45;
+            const outB = eyeRadiusLocal * 0.22;
             const sgnL = eyeLCenter.x < 0 ? -1 : 1;
             const sgnR = eyeRCenter.x < 0 ? -1 : 1;
             pupilMeshL.position.set(eyeLCenter.x + sgnL * outB + eyeLook.h * k, eyeLCenter.y - eyeLook.v * k - down, eyeLCenter.z);
