@@ -29,7 +29,7 @@
     }
     .pupil {
       position: fixed; z-index: 2; display: none;
-      border-radius: 50%; background: #1b2a4d;
+      border-radius: 50%; background: #c0ccde;
       pointer-events: none; transform: translate(-50%, -50%);
     }
     .label {
@@ -660,12 +660,17 @@
           faceCamera = new THREE.PerspectiveCamera(24, width / height, 0.1, 100);
           faceCamera.position.set(0, 0, 2.8);
 
-          const key = new THREE.DirectionalLight(0xffffff, 2.2);
-          key.position.set(-1.2, 1.4, 2.2);
+          // Key from higher up → the brow ridge casts a clearer overhang shadow
+          const key = new THREE.DirectionalLight(0xffffff, 2.1);
+          key.position.set(-0.8, 1.95, 1.7);
           faceScene.add(key);
-          const rim = new THREE.DirectionalLight(0xd6e4ff, 1.0);
+          const rim = new THREE.DirectionalLight(0xd6e4ff, 0.85);
           rim.position.set(1.6, 0.4, -1.4);
           faceScene.add(rim);
+          // Soft up-light from below-front lifts the dark under-nose / nostril shadow
+          const uplight = new THREE.DirectionalLight(0xffffff, 0.6);
+          uplight.position.set(0, -1.4, 1.8);
+          faceScene.add(uplight);
 
           // facecap.glb: KTX2-compressed textures + Meshopt-compressed geometry
           const ktx2 = new KTX2Loader()
@@ -792,10 +797,10 @@
           const pa = projectLocal(eyeLCenter);
           const pb = projectLocal(eyeRCenter);
           const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          const pr = Math.max(6, inter * 0.12);          // pupil radius scales with zoom
-          const baseDown = pr * 0.30;                    // eye opening sits below the eyeball centroid
-          const offX = eyeLook.h * pr * 0.70;            // shift toward cursor
-          const offY = eyeLook.v * pr * 0.70 + baseDown;
+          const pr = Math.max(4, inter * 0.072);         // smaller → stays inside the eye opening
+          const baseDown = pr * 0.55;                    // eye opening sits below the eyeball centroid
+          const offX = eyeLook.h * pr * 0.65;            // shift toward cursor
+          const offY = eyeLook.v * pr * 0.65 + baseDown;
           const op = (0.95 * (1 - curBlink)).toFixed(2); // fade out during blink
           const place = (p, el) => {
             el.style.width = el.style.height = (pr * 2) + 'px';
