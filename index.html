@@ -17,15 +17,27 @@
     }
     canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
     .label {
-      position: fixed; left: 24px; bottom: 20px;
+      position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-      color: #aebbd9; pointer-events: none; user-select: none; z-index: 2;
+      color: #6b8ad0; user-select: none; z-index: 2;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid #e2e7f2;
+      border-radius: 8px;
+      padding: 6px 12px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
     .nav {
-      position: fixed; left: 24px; top: 22px; z-index: 3;
-      display: flex; gap: 18px;
+      position: fixed; left: 20px; top: 18px; z-index: 3;
+      display: inline-flex; gap: 14px; align-items: center;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
       user-select: none;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid #e2e7f2;
+      border-radius: 8px;
+      padding: 8px 14px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
     .nav button {
       background: transparent; border: none; padding: 0;
@@ -65,6 +77,8 @@
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { SimplifyModifier } from 'three/addons/modifiers/SimplifyModifier.js';
+    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
     {
       const canvas = document.getElementById('ascii');
@@ -222,6 +236,8 @@
         while (trail.length && (now - trail[0].t > TRAIL_MS || trail.length > TRAIL_MAX)) trail.shift();
 
         // Precompute per-trail-point velocity + stretch (once per frame, not per cell)
+        // Stretch capped low so trail ellipses stay round-ish; each point also
+        // gets a tiny random rotation so they don't all align in a sharp arrow.
         for (let i = 0; i < trail.length; i++) {
           const p = trail[i];
           const prev = i > 0 ? trail[i - 1] : p;
@@ -230,12 +246,19 @@
           const sp = Math.sqrt(vx * vx + vy * vy);
           p.sp = sp;
           if (sp > 0.6) {
-            p.ux = vx / sp;
-            p.uy = vy / sp;
-            p.stretch = 1 + Math.min(2.6, sp * 0.10);
+            // Rotate stretch axis by a small random jitter
+            if (p.axisJit === undefined) p.axisJit = (Math.random() - 0.5) * 0.6;
+            const ca = Math.cos(p.axisJit), sa = Math.sin(p.axisJit);
+            const uxn = vx / sp, uyn = vy / sp;
+            p.ux = uxn * ca - uyn * sa;
+            p.uy = uxn * sa + uyn * ca;
+            // Much gentler stretching — max ~1.45×
+            p.stretch = 1 + Math.min(0.45, sp * 0.025);
           } else {
             p.ux = 0; p.uy = 0; p.stretch = 1;
           }
+          // Per-point wobble phase (used inside trail loop for organic edges)
+          if (p.wob === undefined) p.wob = Math.random() * Math.PI * 2;
         }
 
         // Bounding box of the trail (so cells far away can skip the inner loop)
@@ -314,7 +337,6 @@
                 const dy = py - p.y;
                 let warpedD2;
                 if (p.sp > 0.6) {
-                  // project (dx,dy) onto velocity (along) and perpendicular
                   const along = dx * p.ux + dy * p.uy;
                   const perp = -dx * p.uy + dy * p.ux;
                   const a = along / p.stretch;
@@ -322,9 +344,18 @@
                 } else {
                   warpedD2 = dx * dx + dy * dy;
                 }
-                if (warpedD2 > RADIUS2) continue;
+                if (warpedD2 > RADIUS2 * 1.3) continue;
+                // Per-trail-point angular wobble — each ellipse has an
+                // independent wobble phase so the union doesn't look like a
+                // perfect arrow when points align.
+                const localAng = Math.atan2(dy, dx);
+                const wob = 1
+                  + 0.22 * Math.sin(localAng * 3 + now * 0.0028 + p.wob)
+                  + 0.14 * Math.sin(localAng * 5 - now * 0.0019 + p.wob * 1.7);
+                const wRad = RADIUS * wob;
                 const d = Math.sqrt(warpedD2);
-                let f = 1 - d / RADIUS;
+                if (d > wRad) continue;
+                let f = 1 - d / wRad;
                 f = f * f;
                 const age = (now - p.t) / TRAIL_MS;
                 const ageW = (1 - age) * (1 - age);
@@ -424,18 +455,18 @@
           camera3d.position.set(0, 0, 2.6);
           camera3d.lookAt(0, 0, 0);
 
-          // Lower ambient + key light + back rim. Toon material wants strong
-          // directional contrast so the 3-band gradient produces sharp steps.
-          scene3d.add(new THREE.AmbientLight(0xffffff, 0.10));
-          const key = new THREE.DirectionalLight(0xffffff, 1.55);
-          key.position.set(-1.4, 1.0, 1.1);
+          // Frontal-ish key light so center features (nose, lips, brow) catch
+          // the brightest band. Side fill from opposite side. Back rim
+          // outlines the silhouette.
+          scene3d.add(new THREE.AmbientLight(0xffffff, 0.12));
+          const key = new THREE.DirectionalLight(0xffffff, 1.4);
+          key.position.set(-0.5, 0.85, 1.5);
           scene3d.add(key);
-          const fill = new THREE.DirectionalLight(0xffffff, 0.15);
-          fill.position.set(1.0, 0.1, 0.55);
+          const fill = new THREE.DirectionalLight(0xffffff, 0.22);
+          fill.position.set(0.9, -0.1, 0.7);
           scene3d.add(fill);
-          // Rim light from behind-top to outline the silhouette
-          const rim = new THREE.DirectionalLight(0xffffff, 0.55);
-          rim.position.set(0.2, 0.8, -1.3);
+          const rim = new THREE.DirectionalLight(0xffffff, 0.65);
+          rim.position.set(0.3, 0.7, -1.2);
           scene3d.add(rim);
 
           offCanvas = document.createElement('canvas');
@@ -493,11 +524,27 @@
           cfg.url,
           (gltf) => {
             const root = gltf.scene;
+            const simplifier = new SimplifyModifier();
             root.traverse((obj) => {
-              if (obj.isMesh) {
+              if (obj.isMesh && obj.geometry && obj.geometry.attributes && obj.geometry.attributes.position) {
+                // Decimate to ~low-poly so each facet shades as one toon band.
+                // This is what gives the "Loren's reference image" faceted look.
+                try {
+                  let geo = obj.geometry;
+                  if (!geo.index) geo = BufferGeometryUtils.mergeVertices(geo);
+                  const vertCount = geo.attributes.position.count;
+                  const keepVerts = Math.min(vertCount, Math.max(180, Math.floor(vertCount * 0.025)));
+                  const removeCount = Math.max(0, vertCount - keepVerts);
+                  if (removeCount > 0) geo = simplifier.modify(geo, removeCount);
+                  geo.computeVertexNormals();
+                  obj.geometry = geo;
+                } catch (e) {
+                  console.warn('simplify failed, using original', e);
+                }
                 obj.material = new THREE.MeshToonMaterial({
                   color: 0xffffff,
-                  gradientMap: buildToonGradient()
+                  gradientMap: buildToonGradient(),
+                  flatShading: true
                 });
                 obj.frustumCulled = false;
               }
