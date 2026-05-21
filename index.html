@@ -799,8 +799,7 @@
               // head rotates IN PLACE (symmetric left/right) instead of orbiting.
               facePivot = new THREE.Group();
               facePivot.add(faceRoot);
-              facePivot.position.y -= 0.25; // lower the face so the eyes sit at the Get Demo button level
-              window.__facePivot = facePivot; // temp handle for live position tuning
+              facePivot.position.y -= 0.13; // lower the face so the eyes sit at the Get Demo button level
               faceScene.add(facePivot);
               facePivot.updateMatrixWorld(true);
               // Pupils: flat-shaded light spheres at each eyeball center,
