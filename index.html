@@ -27,6 +27,11 @@
         rgba(238,243,251,0.95) 50%,
         rgba(238,243,251,1) 72%);
     }
+    .pupil {
+      position: fixed; z-index: 2; display: none;
+      border-radius: 50%; background: #1b2a4d;
+      pointer-events: none; transform: translate(-50%, -50%);
+    }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -75,6 +80,8 @@
   <canvas id="ascii"></canvas>
   <canvas id="face"></canvas>
   <div id="vignette"></div>
+  <div id="pupilL" class="pupil"></div>
+  <div id="pupilR" class="pupil"></div>
   <nav class="nav">
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
@@ -611,6 +618,16 @@
       let faceCanvasW = 0, faceCanvasH = 0;
       let gazeYaw = 0, gazePitch = 0;
       let eyeLook = { h: 0, v: 0 };
+      let eyeL = null, eyeR = null;          // facecap eyeball meshes (hidden)
+      let curBlink = 0;
+      const pupilLEl = document.getElementById('pupilL');
+      const pupilREl = document.getElementById('pupilR');
+      const _proj = new THREE.Vector3();
+      function projectToScreen(obj) {
+        obj.getWorldPosition(_proj);
+        _proj.project(faceCamera);
+        return { x: (_proj.x * 0.5 + 0.5) * width, y: (-_proj.y * 0.5 + 0.5) * height };
+      }
 
       function initFace() {
         try {
@@ -653,6 +670,15 @@
               // Find the mesh that carries blink/expression morph targets
               faceRoot.traverse((o) => { if (o.isMesh && o.morphTargetInfluences) faceMesh = o; });
               if (!faceMesh) faceRoot.traverse((o) => { if (o.isMesh && !faceMesh) faceMesh = o; });
+              // facecap eyeballs are separate meshes (mesh_0/mesh_1) that the
+              // face morphs don't drive — hide them (their geometry showed as
+              // "rings"); we render solid-circle pupils as a 2D overlay instead.
+              faceRoot.traverse((o) => {
+                if (o.name === 'mesh_0') eyeL = o;
+                if (o.name === 'mesh_1') eyeR = o;
+              });
+              if (eyeL) eyeL.visible = false;
+              if (eyeR) eyeR.visible = false;
               // Ethereal, androgynous material — soft cool-white matte with a
               // faint inner glow. Replaces the GLB's skin texture.
               faceRoot.traverse((o) => {
@@ -672,9 +698,9 @@
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               faceRoot.position.sub(center);
-              const fit = 1.25 / Math.max(size.x, size.y, size.z);
+              const fit = 2.05 / Math.max(size.x, size.y, size.z); // larger than the screen
               faceRoot.scale.setScalar(fit);
-              faceRoot.position.y += 0.12; // raise so the face sits centered, less dead space up top
+              faceRoot.position.y += 0.30; // raise so eyes sit in the upper third
               faceScene.add(faceRoot);
               faceReady = true;
               // Temporary debug handles for live tuning
@@ -725,41 +751,20 @@
           faceRoot.rotation.y = gazeYaw;
           faceRoot.rotation.x = gazePitch;
 
+          // Smoothed eye-look value (drives the pupil overlay offset)
+          eyeLook.h += (nx - eyeLook.h) * 0.08;
+          eyeLook.v += (ny - eyeLook.v) * 0.08;
+
+          // ---- Idle blink: infrequent + slow (closes facecap's eyelids) ----
           if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
             const dict = faceMesh.morphTargetDictionary;
             const infl = faceMesh.morphTargetInfluences;
-            // facecap morph names are prefixed (e.g. "blendShape1.eyeLookOutLeft"),
-            // so match by suffix rather than exact name.
-            const setM = (suffix, v) => {
-              for (const key in dict) {
-                if (key === suffix || key.endsWith(suffix)) infl[dict[key]] = v;
-              }
-            };
-
-            // ---- Eyes follow the cursor (faster than head, still gentle) ----
-            eyeLook.h += (nx - eyeLook.h) * 0.06;
-            eyeLook.v += (ny - eyeLook.v) * 0.06;
-            const eh = Math.max(-1, Math.min(1, eyeLook.h));
-            const ev = Math.max(-1, Math.min(1, eyeLook.v));
-            const ehR = Math.max(0, eh), ehL = Math.max(0, -eh);
-            const evD = Math.max(0, ev), evU = Math.max(0, -ev);
-            const A = 0.7; // look intensity
-            // Viewer-right (eh>0): char's left eye looks out, right eye looks in
-            setM('eyeLookOutLeft',  ehR * A);
-            setM('eyeLookInLeft',   ehL * A);
-            setM('eyeLookInRight',  ehR * A);
-            setM('eyeLookOutRight', ehL * A);
-            setM('eyeLookDownLeft',  evD * A);
-            setM('eyeLookUpLeft',    evU * A);
-            setM('eyeLookDownRight', evD * A);
-            setM('eyeLookUpRight',   evU * A);
-
-            // ---- Idle blink: infrequent + slow ----
             const cycle = 10000;        // ~10s between blinks
             const blinkWin = 0.06;      // ~600ms blink duration
             const tt = (now % cycle) / cycle;
             let blink = 0;
             if (tt > (1 - blinkWin)) blink = Math.sin(((tt - (1 - blinkWin)) / blinkWin) * Math.PI);
+            curBlink = blink;
             for (const name in dict) {
               if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
             }
@@ -767,6 +772,25 @@
         }
 
         faceRenderer.render(faceScene, faceCamera);
+
+        // ---- Solid-circle pupils as a 2D overlay, tracking the cursor ----
+        if (faceReady && eyeL && eyeR) {
+          const pa = projectToScreen(eyeL);
+          const pb = projectToScreen(eyeR);
+          const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+          const pr = Math.max(7, inter * 0.17);          // pupil radius scales with zoom
+          const offX = eyeLook.h * pr * 0.75;            // shift toward cursor
+          const offY = eyeLook.v * pr * 0.75;
+          const op = (0.92 * (1 - curBlink)).toFixed(2); // fade out during blink
+          const place = (p, el) => {
+            el.style.width = el.style.height = (pr * 2) + 'px';
+            el.style.left = (p.x + offX) + 'px';
+            el.style.top = (p.y + offY) + 'px';
+            el.style.opacity = op;
+          };
+          place(pa, pupilLEl);
+          place(pb, pupilREl);
+        }
       }
 
       initFace();
@@ -905,6 +929,8 @@
         asciiCanvasEl.style.display = m === 'cursor' ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
+        pupilLEl.style.display = m === 'face' ? 'block' : 'none';
+        pupilREl.style.display = m === 'face' ? 'block' : 'none';
         if (m === 'face') resizeFace();
       }
       navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
