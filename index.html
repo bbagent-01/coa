@@ -56,15 +56,20 @@
       transition: background 0.15s ease;
     }
     #hero .cta:hover { background: #1f4fe0; }
-    #hero .ratings { display: flex; gap: 18px; margin-top: 34px; flex-wrap: wrap; justify-content: center; }
-    #hero .rating {
-      display: flex; align-items: center; gap: 12px;
-      background: rgba(255,255,255,0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-      border: 1px solid #e2e7f2; border-radius: 12px; padding: 12px 18px;
-    }
-    #hero .rating .stars { color: #f4b400; letter-spacing: 1px; font-size: 14px; }
-    #hero .rating .score { color: #0a2540; font-weight: 700; font-size: 14px; }
-    #hero .rating .src { color: #6b7a90; font-size: 11px; }
+    #hero .ratings { display: flex; gap: 24px; margin-top: 36px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    #hero .ratings .badge { width: 300px; max-width: 42vw; height: auto; display: block; pointer-events: none; }
+    /* Coalesce-style marketing top nav (shown in the content overlay) */
+    #hero .topnav { position: absolute; top: 0; left: 0; right: 0; padding: 48px 40px 0; }
+    #hero .topnav .inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    #hero .topnav .logo { height: 30px; width: auto; pointer-events: auto; }
+    #hero .topnav .links { display: flex; gap: 30px; align-items: center; }
+    #hero .topnav .links a { pointer-events: auto; color: #00274b; text-decoration: none; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 5px; }
+    #hero .topnav .links a:hover { color: #2962ff; }
+    #hero .topnav .right { display: flex; align-items: center; gap: 20px; }
+    #hero .topnav .book { pointer-events: auto; background: #2962ff; color: #fff; font-weight: 600; font-size: 15px; padding: 11px 22px; border-radius: 999px; text-decoration: none; transition: background 0.15s ease; white-space: nowrap; }
+    #hero .topnav .book:hover { background: #1f4fe0; }
+    #hero .topnav .search { pointer-events: auto; color: #00274b; display: inline-flex; align-items: center; cursor: pointer; }
+    @media (max-width: 960px) { #hero .topnav .links { display: none; } #hero .topnav { padding-top: 44px; } }
     #hero .logos {
       margin-top: 34px; max-width: 70ch; color: #9aa7ba;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; line-height: 2;
@@ -139,18 +144,27 @@
   </nav>
 
   <div id="hero">
+    <div class="topnav"><div class="inner">
+      <a href="https://coalesce.io/" target="_blank" rel="noopener"><img class="logo" src="https://coalesce.io/wp-content/themes/mt-coalesce/assets/dist/img/svg/coalesce-logo-blue.svg" alt="Coalesce"></a>
+      <div class="links">
+        <a href="#">Product</a>
+        <a href="#">Solutions</a>
+        <a href="#">Resources</a>
+        <a href="#">Customers</a>
+        <a href="#">Company</a>
+        <a href="#">Docs <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+      </div>
+      <div class="right">
+        <span class="search" title="Search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+        <a class="book" href="https://coalesce.io/" target="_blank" rel="noopener">Book a Demo</a>
+      </div>
+    </div></div>
     <h1>Humans and agents delivering data, together</h1>
     <p>Develop, deploy, govern, and observe every pipeline in one operating layer built for analytics and AI.</p>
     <a class="cta" href="https://coalesce.io/" target="_blank" rel="noopener">Get Demo</a>
     <div class="ratings">
-      <div class="rating">
-        <span class="stars">★★★★★</span>
-        <span><span class="score">4.8 / 5</span> &nbsp;<span class="src">G2 · Feb 1, 2026</span></span>
-      </div>
-      <div class="rating">
-        <span class="stars">★★★★★</span>
-        <span><span class="score">4.9 / 5</span> &nbsp;<span class="src">Gartner Peer Insights · Feb 1, 2026</span></span>
-      </div>
+      <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/g2-feb.png" alt="G2: 4.8 out of 5 stars, as of Feb 1, 2026">
+      <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/gartner-feb.png" alt="Gartner Peer Insights: 4.9 out of 5 stars, as of Feb 1, 2026">
     </div>
     <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
   </div>
@@ -848,6 +862,7 @@
                 eyeLCenter = s.center; eyeRadiusLocal = s.radius;
                 pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
                 pupilMeshL.position.copy(s.center);
+                pupilMeshL.rotation.y = -Math.PI / 2; // face the iris detail toward the camera (was mapped to the side)
                 faceRoot.add(pupilMeshL);
               }
               if (eyeR) {
@@ -855,6 +870,7 @@
                 eyeRCenter = s.center;
                 pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
                 pupilMeshR.position.copy(s.center);
+                pupilMeshR.rotation.y = -Math.PI / 2; // face the iris detail toward the camera (was mapped to the side)
                 faceRoot.add(pupilMeshR);
               }
               faceReady = true;
