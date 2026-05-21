@@ -750,14 +750,14 @@
               if (eyeL) {
                 const s = eyeSphereLocal(eyeL);
                 eyeLCenter = s.center; eyeRadiusLocal = s.radius;
-                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.50, 20, 20), pupilMat);
+                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
                 pupilMeshL.position.copy(s.center);
                 faceRoot.add(pupilMeshL);
               }
               if (eyeR) {
                 const s = eyeSphereLocal(eyeR);
                 eyeRCenter = s.center;
-                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.50, 20, 20), pupilMat);
+                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
                 pupilMeshR.position.copy(s.center);
                 faceRoot.add(pupilMeshR);
               }
