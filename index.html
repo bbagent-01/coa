@@ -123,7 +123,7 @@
   <nav class="nav">
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
-    <button data-mode="coalesce">03 · coalesce</button>
+    <button data-mode="spiralin">03 · spiral in</button>
     <button data-mode="facematrix">04 · face matrix</button>
     <span class="sep">/</span>
     <button id="heroToggle">content</button>
@@ -1145,7 +1145,12 @@
             const arms = 16;
             const bend = 0.0011;                                 // small = straighter lines
             const spoke = 0.5 + 0.5 * Math.sin((ang + dist * bend) * arms);
-            const inflow = 0.5 + 0.5 * Math.sin(dist * 0.020 + now * 0.0030); // pulses move inward
+            // Warp the inward "rings" with angular + spatial undulation so they
+            // come in organically/haphazardly instead of as perfect circles.
+            const warp = Math.sin(ang * 4 + now * 0.0009) * 24
+                       + Math.sin(ang * 7 - now * 0.0006) * 14
+                       + Math.sin(px * 0.028 + py * 0.024 + now * 0.0007) * 12;
+            const inflow = 0.5 + 0.5 * Math.sin((dist + warp) * 0.020 + now * 0.0030); // pulses move inward
             const conv = Math.max(0, 1 - dist / (maxR * 1.15));  // brighter toward center
             let bright = 0.045 + spoke * inflow * (0.14 + conv * 0.34);
             bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
@@ -1164,7 +1169,7 @@
 
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
-        else if (mode === 'coalesce') drawCoalesce(now);
+        else if (mode === 'spiralin') drawCoalesce(now);
         else if (mode === 'facematrix') drawFaceMatrix(now);
         else drawFace(now);
         requestAnimationFrame(draw);
@@ -1191,10 +1196,10 @@
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-        labelEl.textContent = 'coa · ' + m;
+        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'facematrix' ? 'face matrix' : m);
         document.body.style.cursor = (m === 'face' || m === 'facematrix') ? 'default' : 'crosshair';
-        // cursor + coalesce + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'coalesce' || m === 'facematrix') ? 'block' : 'none';
+        // cursor + spiralin + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
+        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         if (m === 'face' || m === 'facematrix') resizeFace();
