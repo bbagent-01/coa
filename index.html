@@ -957,24 +957,33 @@
             const cell = headCells[r * headCols + c];
             if (!cell) continue;
             const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
-            // Subtly moving light gray-blue background
+
+            // Subtle moving light gray-blue background (faint — only fills the
+            // space around the face so it doesn't wash out the face contrast).
             const w1 = 0.5 + 0.5 * Math.sin(px * 0.020 - now * 0.0005 + py * 0.012);
             const w2 = 0.5 + 0.5 * Math.sin(px * 0.011 - now * 0.0003 - py * 0.008);
-            const sh = 0.5 + 0.5 * Math.sin(cell.phase + now * 0.0011);
-            let bright = 0.08 + w1 * 0.05 + w2 * 0.035 + sh * 0.02;
-            // Face luminance with a soft radial fade so sides/ears dissolve
+            let bright = 0.05 + w1 * 0.045 + w2 * 0.03;
+
+            // Where the 3D face is rendered, drive brightness DIRECTLY from the
+            // render's shading: lit areas → light blue, shadows (eye sockets,
+            // brow, nose, lips, jaw) → darker blue. A base ink fills the whole
+            // face so the form reads; (1-lum) makes the features pop.
             const ai = (r * headCols + c) * 4;
             const a = data[ai + 3];
-            if (a > 16) {
+            if (a > 14) {
               const lum = (data[ai] * 0.299 + data[ai + 1] * 0.587 + data[ai + 2] * 0.114) / 255;
-              const aw = Math.min(1, a / 200);
+              let faceInk = 0.18 + (1 - lum) * 0.66;
+              // Gentle edge dissolve so ears / silhouette melt into the bg.
               const fx = (px / width - 0.5), fy = (py / height - 0.42);
-              let rf = 1 - (fx * fx) / (0.30 * 0.30) - (fy * fy) / (0.54 * 0.54);
-              if (rf < 0) rf = 0; else rf = rf * rf;
-              bright += Math.pow(lum, 0.85) * 0.66 * aw * rf;
+              let rf = 1 - (fx * fx) / (0.36 * 0.36) - (fy * fy) / (0.60 * 0.60);
+              if (rf < 0) rf = 0;
+              const aw = Math.min(1, a / 180);
+              faceInk *= aw * rf;
+              if (faceInk > bright) bright = faceInk;   // face overrides the bg
             }
-            if (bright > 0.82) bright = 0.82;
-            if (bright < 0.10) continue;
+
+            if (bright > 0.95) bright = 0.95;
+            if (bright < 0.09) continue;
             const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = COLORS[colIdx];
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
