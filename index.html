@@ -1045,7 +1045,8 @@
               continue;
             }
             const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
-            let norm = (0.82 - lum) / 0.42;
+            // Slightly wider/earlier capture brings out mid shadows (nose sides).
+            let norm = (0.86 - lum) / 0.46;
             if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
             let bright = 0.10 + Math.pow(norm, 0.92) * 1.30;
             const fx = (px / width - 0.5), fy = (py / height - 0.58);
@@ -1055,7 +1056,9 @@
             bright *= aw * rf;
             if (bright > 1) bright = 1;
             if (bright < 0.085) continue;     // lighter than this → cached ambient shows
-            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            // Cap the darkest darks: medium shadows stay, but the silhouette
+            // never goes near-black (kills the dark halo around the head).
+            const colIdx = Math.min(lastColor - 3, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = FACE_COLORS[colIdx];
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
           }
@@ -1210,15 +1213,19 @@
             // center, not a spinning spiral.
             const arms = 16;
             const bend = 0.0011;                                 // small = straighter lines
-            const spoke = 0.5 + 0.5 * Math.sin((ang + dist * bend) * arms);
-            // Warp the inward "rings" with angular + spatial undulation so they
-            // come in organically/haphazardly instead of as perfect circles.
-            const warp = Math.sin(ang * 4 + now * 0.0009) * 24
-                       + Math.sin(ang * 7 - now * 0.0006) * 14
-                       + Math.sin(px * 0.028 + py * 0.024 + now * 0.0007) * 12;
-            const inflow = 0.5 + 0.5 * Math.sin((dist + warp) * 0.020 + now * 0.0030); // pulses move inward
+            const spoke = 0.6 + 0.4 * Math.sin((ang + dist * bend) * arms); // softer arm gaps
+            // Warp the inward bands with angular + spatial undulation so they
+            // come in organically instead of as perfect circles.
+            const warp = Math.sin(ang * 4 + now * 0.0009) * 28
+                       + Math.sin(ang * 7 - now * 0.0006) * 17
+                       + Math.sin(px * 0.026 + py * 0.022 + now * 0.0007) * 14;
+            // STAGGER the inward bands per-arm (offset by angle) so they're not
+            // uniform concentric rings, and SOFTEN them so the banding is gentle
+            // and slow rather than harsh.
+            const inflowPhase = (dist + warp) * 0.017 + now * 0.0020 + Math.sin(ang * arms) * 1.3;
+            const inflow = 0.55 + 0.30 * Math.sin(inflowPhase); // gentle band contrast
             const conv = Math.max(0, 1 - dist / (maxR * 1.15));  // brighter toward center
-            let bright = 0.045 + spoke * inflow * (0.14 + conv * 0.34);
+            let bright = 0.05 + spoke * inflow * (0.13 + conv * 0.30);
             bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
 
             // Calm char turnover (slow) so it doesn't look jittery
