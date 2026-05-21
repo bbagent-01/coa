@@ -270,12 +270,12 @@
       // ---- Flame ramp for the mouse blob: bright/light hot core → deeper,
       // fainter blue at the edges (the cursor reads like a flame/glow) ----
       const FLAME = [
-        'rgba(255, 255, 255,',   // white-hot core
-        'rgba(214, 231, 255,',   // very light blue
-        'rgba(150, 186, 255,',   // light blue
-        'rgba(96, 142, 255,',    // blue
-        'rgba(48, 104, 238,',    // brand-ish blue
-        'rgba(26, 70, 196,'      // deep blue edge
+        'rgba(156, 196, 255,',   // bright light-blue core (no white)
+        'rgba(118, 166, 255,',   // light blue
+        'rgba(84, 136, 250,',    // blue
+        'rgba(54, 108, 236,',    // brand-ish blue
+        'rgba(36, 84, 212,',     // deeper blue
+        'rgba(24, 64, 182,'      // deep blue edge
       ];
 
       // ---- Grid: tight 9pt characters for cursor mode ----
@@ -495,7 +495,7 @@
           if (tw > 1.3) return SPARKLE[(((phase * 997) | 0) % SPARKLE.length + SPARKLE.length) % SPARKLE.length];
         }
         const fi = Math.min(FLAME.length - 1, (((1 - t) * FLAME.length) | 0));
-        const alpha = Math.min(1, 0.14 + t * 1.0);
+        const alpha = Math.min(1, 0.22 + t * 0.85);
         return FLAME[fi] + alpha.toFixed(3) + ')';
       }
 
