@@ -677,6 +677,14 @@
               faceRoot.position.y += 0.12; // raise so the face sits centered, less dead space up top
               faceScene.add(faceRoot);
               faceReady = true;
+              // Temporary debug handles for live tuning
+              window.__coaFace = faceRoot;
+              window.__coaMesh = faceMesh;
+              window.__THREE = THREE;
+              window.__coaMeshes = [];
+              faceRoot.traverse((o) => { if (o.isMesh) window.__coaMeshes.push(o.name); });
+              window.__coaMorphs = faceMesh && faceMesh.morphTargetDictionary
+                ? Object.keys(faceMesh.morphTargetDictionary) : [];
             },
             undefined,
             (err) => { console.error('face load failed', err); faceError = 'failed to load face'; }
@@ -746,11 +754,12 @@
             setM('eyeLookDownRight', evD * A);
             setM('eyeLookUpRight',   evU * A);
 
-            // ---- Idle blink ----
-            const cycle = 4600;
+            // ---- Idle blink: infrequent + slow ----
+            const cycle = 10000;        // ~10s between blinks
+            const blinkWin = 0.06;      // ~600ms blink duration
             const tt = (now % cycle) / cycle;
             let blink = 0;
-            if (tt > 0.955) blink = Math.sin(((tt - 0.955) / 0.045) * Math.PI);
+            if (tt > (1 - blinkWin)) blink = Math.sin(((tt - (1 - blinkWin)) / blinkWin) * Math.PI);
             for (const name in dict) {
               if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
             }
