@@ -620,24 +620,22 @@
       let eyeLook = { h: 0, v: 0 };
       let facePivot = null;                  // centered pivot so the head spins in place
       let eyeL = null, eyeR = null;          // facecap eyeball meshes (hidden)
-      let eyeLCenter = null, eyeRCenter = null; // geometry centroids, in faceRoot-local space
+      let eyeLCenter = null, eyeRCenter = null; // eyeball centers, in faceRoot-local space
+      let eyeRadiusLocal = 0.1;              // eyeball radius in faceRoot-local units
+      let pupilMeshL = null, pupilMeshR = null; // 3D pupils, cropped by eyelids via depth
+      let pupilMat = null;
       let curBlink = 0;
-      const pupilLEl = document.getElementById('pupilL');
-      const pupilREl = document.getElementById('pupilR');
-      const _proj = new THREE.Vector3();
-      // Project a faceRoot-local point to screen pixels (handles head rotation).
-      function projectLocal(localVec) {
-        _proj.copy(localVec).applyMatrix4(faceRoot.matrixWorld);
-        _proj.project(faceCamera);
-        return { x: (_proj.x * 0.5 + 0.5) * width, y: (-_proj.y * 0.5 + 0.5) * height };
-      }
-      // Geometry centroid of a mesh, expressed in faceRoot-local coordinates.
-      function eyeCentroidLocal(mesh) {
-        mesh.geometry.computeBoundingBox();
-        const c = mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
-        mesh.localToWorld(c);
-        faceRoot.worldToLocal(c);
-        return c;
+      // Bounding-sphere center + radius of a mesh, in faceRoot-local coordinates.
+      function eyeSphereLocal(mesh) {
+        mesh.geometry.computeBoundingSphere();
+        const bs = mesh.geometry.boundingSphere;
+        const center = bs.center.clone();
+        const surf = bs.center.clone(); surf.x += bs.radius;
+        mesh.localToWorld(center);
+        mesh.localToWorld(surf);
+        faceRoot.worldToLocal(center);
+        faceRoot.worldToLocal(surf);
+        return { center, radius: center.distanceTo(surf) };
       }
 
       function initFace() {
@@ -726,10 +724,24 @@
               facePivot.position.y += 0.12; // eyes upper third, mouth visible
               faceScene.add(facePivot);
               facePivot.updateMatrixWorld(true);
-              // Store eyeball geometry centroids (in faceRoot-local space) for
-              // accurate pupil placement.
-              if (eyeL) eyeLCenter = eyeCentroidLocal(eyeL);
-              if (eyeR) eyeRCenter = eyeCentroidLocal(eyeR);
+              // Pupils: flat-shaded light spheres at each eyeball center,
+              // children of faceRoot. MeshBasic = flat color (no iris ring),
+              // depthTest lets the eyelids (face mesh) crop them to the opening.
+              pupilMat = new THREE.MeshBasicMaterial({ color: 0xb4c2d8, transparent: true, opacity: 0.95 });
+              if (eyeL) {
+                const s = eyeSphereLocal(eyeL);
+                eyeLCenter = s.center; eyeRadiusLocal = s.radius;
+                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.66, 20, 20), pupilMat);
+                pupilMeshL.position.copy(s.center);
+                faceRoot.add(pupilMeshL);
+              }
+              if (eyeR) {
+                const s = eyeSphereLocal(eyeR);
+                eyeRCenter = s.center;
+                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.66, 20, 20), pupilMat);
+                pupilMeshR.position.copy(s.center);
+                faceRoot.add(pupilMeshR);
+              }
               faceReady = true;
             },
             undefined,
@@ -788,29 +800,18 @@
               if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
             }
           }
+
+          // ---- 3D pupils track the cursor; eyelids crop them via depth ----
+          if (pupilMeshL && pupilMeshR) {
+            const k = eyeRadiusLocal * 0.40;     // travel across the eye
+            const down = eyeRadiusLocal * 0.08;  // sit slightly low in the opening
+            pupilMeshL.position.set(eyeLCenter.x + eyeLook.h * k, eyeLCenter.y - eyeLook.v * k - down, eyeLCenter.z);
+            pupilMeshR.position.set(eyeRCenter.x + eyeLook.h * k, eyeRCenter.y - eyeLook.v * k - down, eyeRCenter.z);
+            if (pupilMat) pupilMat.opacity = 0.95 * (1 - curBlink);
+          }
         }
 
         faceRenderer.render(faceScene, faceCamera);
-
-        // ---- Solid-circle pupils as a 2D overlay, tracking the cursor ----
-        if (faceReady && eyeLCenter && eyeRCenter) {
-          const pa = projectLocal(eyeLCenter);
-          const pb = projectLocal(eyeRCenter);
-          const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          const pr = Math.max(4, inter * 0.072);         // smaller → stays inside the eye opening
-          const baseDown = pr * 0.55;                    // eye opening sits below the eyeball centroid
-          const offX = eyeLook.h * pr * 0.65;            // shift toward cursor
-          const offY = eyeLook.v * pr * 0.65 + baseDown;
-          const op = (0.95 * (1 - curBlink)).toFixed(2); // fade out during blink
-          const place = (p, el) => {
-            el.style.width = el.style.height = (pr * 2) + 'px';
-            el.style.left = (p.x + offX) + 'px';
-            el.style.top = (p.y + offY) + 'px';
-            el.style.opacity = op;
-          };
-          place(pa, pupilLEl);
-          place(pb, pupilREl);
-        }
       }
 
       initFace();
@@ -949,8 +950,6 @@
         asciiCanvasEl.style.display = m === 'cursor' ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
-        pupilLEl.style.display = m === 'face' ? 'block' : 'none';
-        pupilREl.style.display = m === 'face' ? 'block' : 'none';
         if (m === 'face') resizeFace();
       }
       navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
