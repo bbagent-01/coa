@@ -139,6 +139,7 @@
     <button data-mode="face">02 · face</button>
     <button data-mode="spiralin">03 · spiral in</button>
     <button data-mode="facematrix">04 · face matrix</button>
+    <button data-mode="streams">05 · streams</button>
     <span class="sep">/</span>
     <button id="heroToggle">content</button>
   </nav>
@@ -270,12 +271,12 @@
       // ---- Flame ramp for the mouse blob: bright/light hot core → deeper,
       // fainter blue at the edges (the cursor reads like a flame/glow) ----
       const FLAME = [
-        'rgba(156, 196, 255,',   // bright light-blue core (no white)
-        'rgba(118, 166, 255,',   // light blue
-        'rgba(84, 136, 250,',    // blue
-        'rgba(54, 108, 236,',    // brand-ish blue
-        'rgba(36, 84, 212,',     // deeper blue
-        'rgba(24, 64, 182,'      // deep blue edge
+        'rgba(140, 232, 255,',   // bright light CYAN-blue core
+        'rgba(96, 188, 255,',    // cyan → blue
+        'rgba(68, 142, 252,',    // blue
+        'rgba(48, 106, 236,',    // brand-ish blue
+        'rgba(32, 80, 210,',     // deeper blue
+        'rgba(20, 58, 176,'      // deep blue edge
       ];
 
       // ---- Grid: tight 9pt characters for cursor mode ----
@@ -1327,10 +1328,60 @@
         }
       }
 
+      // ------------------------------------------------------------------
+      // MODE 5 — DATA STREAMS: many long-tailed comets ("sperms") of code
+      // streaming slowly left → right. Pure 2D (no WebGL) → very light/fast.
+      // ------------------------------------------------------------------
+      let dStreams = null;
+      const D_STREAM_N = 70;                 // many of them
+      function newDStream(startX) {
+        return {
+          x: startX,
+          y: (Math.random() * height) | 0,
+          speed: 0.32 + Math.random() * 0.62,     // fairly slow
+          tail: 48 + ((Math.random() * 60) | 0),  // very long tails (chars)
+          amp: 1.4 + Math.random() * 2.4,         // tail wiggle amount
+          seed: (Math.random() * 100000) | 0
+        };
+      }
+      function ensureDStreams() {
+        if (!dStreams || dStreams.length !== D_STREAM_N) {
+          dStreams = new Array(D_STREAM_N);
+          for (let i = 0; i < D_STREAM_N; i++) dStreams[i] = newDStream((Math.random() * (width + 700)) - 350);
+        }
+      }
+      function drawDataStreams(now) {
+        ensureDStreams();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+        const step = CHAR_W;
+        const flameLast = FLAME.length - 1;
+        for (let si = 0; si < D_STREAM_N; si++) {
+          const s = dStreams[si];
+          s.x += s.speed;
+          if (s.x - s.tail * step > width + 4) { dStreams[si] = newDStream(-Math.random() * 400 - 20); continue; }
+          for (let i = 0; i < s.tail; i++) {
+            const cx = s.x - i * step;
+            if (cx < -step) break;        // rest of the tail is off the left edge
+            if (cx > width) continue;     // head not on-screen yet
+            const t = 1 - i / s.tail;     // 1 at the bright head → 0 at the tail tip
+            const alpha = t * t * 0.92;   // bright head, long fading tail
+            if (alpha < 0.025) continue;
+            const fi = Math.min(flameLast, (((1 - t) * FLAME.length) | 0));
+            ctx.fillStyle = FLAME[fi] + alpha.toFixed(3) + ')';
+            const cy = s.y + Math.sin(i * 0.22 - now * 0.005 + s.seed) * s.amp; // gentle sperm-tail wiggle
+            const ch = CHAR_POOL[(s.seed + i * 131 + ((now * 0.0009 + i * 0.7) | 0)) % CHAR_POOL.length];
+            ctx.fillText(ch, cx, cy);
+          }
+        }
+      }
+
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
         else if (mode === 'spiralin') drawCoalesce(now, false);
         else if (mode === 'facematrix') drawFaceMatrix(now);
+        else if (mode === 'streams') drawDataStreams(now);
         else drawFace(now);
         requestAnimationFrame(draw);
       }
@@ -1373,7 +1424,7 @@
         labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'facematrix' ? 'face matrix' : m);
         document.body.style.cursor = (m === 'face' || m === 'facematrix') ? 'default' : 'crosshair';
         // cursor + spirals + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
+        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix' || m === 'streams') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         document.getElementById('sizeCtrl').style.display = m === 'facematrix' ? 'flex' : 'none';
