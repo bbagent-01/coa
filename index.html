@@ -723,14 +723,6 @@
               if (eyeL) eyeLCenter = eyeCentroidLocal(eyeL);
               if (eyeR) eyeRCenter = eyeCentroidLocal(eyeR);
               faceReady = true;
-              // Temporary debug handles for live tuning
-              window.__coaFace = faceRoot;
-              window.__coaMesh = faceMesh;
-              window.__THREE = THREE;
-              window.__coaMeshes = [];
-              faceRoot.traverse((o) => { if (o.isMesh) window.__coaMeshes.push(o.name); });
-              window.__coaMorphs = faceMesh && faceMesh.morphTargetDictionary
-                ? Object.keys(faceMesh.morphTargetDictionary) : [];
             },
             undefined,
             (err) => { console.error('face load failed', err); faceError = 'failed to load face'; }
@@ -798,10 +790,11 @@
           const pa = projectLocal(eyeLCenter);
           const pb = projectLocal(eyeRCenter);
           const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          const pr = Math.max(7, inter * 0.14);          // pupil radius scales with zoom
-          const offX = eyeLook.h * pr * 0.75;            // shift toward cursor
-          const offY = eyeLook.v * pr * 0.75;
-          const op = (0.92 * (1 - curBlink)).toFixed(2); // fade out during blink
+          const pr = Math.max(6, inter * 0.12);          // pupil radius scales with zoom
+          const baseDown = pr * 0.30;                    // eye opening sits below the eyeball centroid
+          const offX = eyeLook.h * pr * 0.70;            // shift toward cursor
+          const offY = eyeLook.v * pr * 0.70 + baseDown;
+          const op = (0.95 * (1 - curBlink)).toFixed(2); // fade out during blink
           const place = (p, el) => {
             el.style.width = el.style.height = (pr * 2) + 'px';
             el.style.left = (p.x + offX) + 'px';
