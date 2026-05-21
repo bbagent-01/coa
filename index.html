@@ -646,8 +646,9 @@
               const center = box.getCenter(new THREE.Vector3());
               const size = box.getSize(new THREE.Vector3());
               faceRoot.position.sub(center);
-              const fit = 1.15 / Math.max(size.x, size.y, size.z);
+              const fit = 1.25 / Math.max(size.x, size.y, size.z);
               faceRoot.scale.setScalar(fit);
+              faceRoot.position.y += 0.12; // raise so the face sits centered, less dead space up top
               faceScene.add(faceRoot);
               faceReady = true;
             },
