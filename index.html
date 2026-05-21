@@ -430,13 +430,18 @@
       let offCtx2d = null;
       let off3dW = 0, off3dH = 0;
 
+      // fit  = target world-space size of the model's largest dimension
+      //        (camera at z=2.6 with 26° FOV shows ~1.2 vertical units, so
+      //        fit=2.0 means head overflows top+bottom → face fills frame)
+      // yOff = world-space vertical offset AFTER scaling (negative = down,
+      //        used to crop neck and put eyes near vertical center)
       const MODELS = {
         perry:     { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/LeePerrySmith/LeePerrySmith.glb',
-                     fit: 1.3, yaw0: 0,        xOff: 0,    yOff: 0 },
+                     fit: 2.1, yaw0: 0,        xOff: 0,    yOff: -0.45 },
         nefertiti: { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/Nefertiti/Nefertiti.glb',
-                     fit: 1.4, yaw0: 0,        xOff: 0,    yOff: 0 },
+                     fit: 1.8, yaw0: 0,        xOff: 0,    yOff: -0.25 },
         facecap:   { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb',
-                     fit: 1.5, yaw0: Math.PI,  xOff: 0,    yOff: 0 }
+                     fit: 1.7, yaw0: Math.PI,  xOff: 0,    yOff: 0 }
       };
       let currentModel = 'perry';
 
@@ -549,15 +554,16 @@
                 obj.frustumCulled = false;
               }
             });
-            // Recenter + scale to fit
+            // Recenter, scale to fit, then apply offsets in WORLD units so
+            // we can precisely crop (e.g. push the neck below the bottom).
             const box = new THREE.Box3().setFromObject(root);
             const center = box.getCenter(new THREE.Vector3());
             root.position.sub(center);
-            root.position.x += cfg.xOff || 0;
-            root.position.y += cfg.yOff || 0;
             const size = box.getSize(new THREE.Vector3());
             const fit = (cfg.fit || 1.3) / Math.max(size.x, size.y, size.z);
             root.scale.setScalar(fit);
+            root.position.x += cfg.xOff || 0;
+            root.position.y += cfg.yOff || 0;
             root.rotation.y = cfg.yaw0 || 0;
             headGroup.add(root);
             headReady = true;
@@ -620,9 +626,10 @@
         let hasHead = false;
         if (headReady && renderer3d) {
           if (off3dW !== cols * SS || off3dH !== rows * SS) resize3D();
-          // Slow yaw + tiny nod
-          headGroup.rotation.y = Math.sin(now * 0.00035) * 0.6;
-          headGroup.rotation.x = Math.sin(now * 0.00028 + 1.3) * 0.08;
+          // Subtle yaw + tiny nod — kept small since the face fills the frame
+          // (large rotation would put the eye-line off-screen).
+          headGroup.rotation.y = Math.sin(now * 0.00035) * 0.32;
+          headGroup.rotation.x = Math.sin(now * 0.00028 + 1.3) * 0.07;
           renderer3d.render(scene3d, camera3d);
           offCtx2d.clearRect(0, 0, off3dW, off3dH);
           offCtx2d.drawImage(renderer3d.domElement, 0, 0, off3dW, off3dH);
