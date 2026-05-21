@@ -70,6 +70,14 @@
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; line-height: 2;
     }
     #heroToggle.active { color: #2547d9; }
+    #sizeCtrl {
+      position: fixed; left: 20px; top: 58px; z-index: 3; display: none;
+      align-items: center; gap: 10px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b8ad0;
+      background: rgba(255,255,255,0.88); border: 1px solid #e2e7f2; border-radius: 8px;
+      padding: 7px 12px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    }
+    #sizeCtrl input[type="range"] { width: 130px; accent-color: #2962ff; cursor: pointer; }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -146,6 +154,10 @@
     <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
   </div>
   <div class="label" id="label">coa · cursor</div>
+  <div id="sizeCtrl">
+    <span>head size</span>
+    <input type="range" id="sizeSlider" min="1" max="3.2" step="0.05" value="2">
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -685,9 +697,9 @@
       // ------------------------------------------------------------------
       const faceCanvasEl = document.getElementById('face');
       let faceRenderer = null, faceScene = null, faceCamera = null;
-      // Matrix-face framing (independent of the smooth face): closer = ~2x zoom,
-      // lookY shifts the face up so the eyes flank the H1.
-      const mzZoom = 1.4, mzLookY = -0.22;
+      // Matrix-face framing (independent of the smooth face): closer = bigger,
+      // and lookY auto-tracks zoom so the eyes stay flanking the H1.
+      let mzZoom = 1.4, mzLookY = -0.22;
       let faceRoot = null, faceMesh = null;
       let faceReady = false, faceError = null;
       let faceCanvasW = 0, faceCanvasH = 0;
@@ -802,15 +814,18 @@
               // Pupils: flat-shaded light spheres at each eyeball center,
               // children of faceRoot. MeshBasic = flat color (no iris ring),
               // depthTest lets the eyelids (face mesh) crop them to the opening.
-              // Blue iris: brand #2962ff with a soft radial highlight/shade so
-              // it isn't flat ("blue eyes" with slight variation).
+              // Blue iris with structure: gradient + darker limbus ring + a
+              // dark pupil + a small catchlight highlight (more eye detail).
               const pcv = document.createElement('canvas'); pcv.width = pcv.height = 64;
               const pg = pcv.getContext('2d');
-              const grd = pg.createRadialGradient(26, 22, 3, 32, 32, 38);
-              grd.addColorStop(0, '#6a93ff');
+              const grd = pg.createRadialGradient(28, 26, 3, 32, 32, 33);
+              grd.addColorStop(0, '#7aa0ff');
               grd.addColorStop(0.45, '#2962ff');
-              grd.addColorStop(1, '#1a44bd');
+              grd.addColorStop(0.82, '#1c46c0');
+              grd.addColorStop(1, '#12357f');     // limbus (darker iris edge)
               pg.fillStyle = grd; pg.fillRect(0, 0, 64, 64);
+              pg.beginPath(); pg.arc(32, 32, 8, 0, Math.PI * 2); pg.fillStyle = '#0b1b46'; pg.fill(); // pupil
+              pg.beginPath(); pg.arc(27, 26, 3.4, 0, Math.PI * 2); pg.fillStyle = 'rgba(226,238,255,0.95)'; pg.fill(); // catchlight
               const ptex = new THREE.CanvasTexture(pcv);
               ptex.colorSpace = THREE.SRGBColorSpace;
               pupilMat = new THREE.MeshBasicMaterial({ map: ptex, transparent: true, opacity: 0.95 });
@@ -1257,6 +1272,18 @@
       }
       heroToggle.addEventListener('click', () => setHero(!heroOn));
       setHero(true);
+
+      // Head-size slider (matrix face). Bigger = camera closer; lookY auto-
+      // tracks so the eyes stay flanking the H1 at any size.
+      const sizeCtrl = document.getElementById('sizeCtrl');
+      const sizeSlider = document.getElementById('sizeSlider');
+      function applyHeadSize() {
+        const size = parseFloat(sizeSlider.value);
+        mzZoom = 2.8 / size;
+        mzLookY = -0.126 - 0.0674 * mzZoom;
+      }
+      sizeSlider.addEventListener('input', applyHeadSize);
+      applyHeadSize();
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
@@ -1266,6 +1293,7 @@
         asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
+        document.getElementById('sizeCtrl').style.display = m === 'facematrix' ? 'flex' : 'none';
         if (m === 'face' || m === 'facematrix') resizeFace();
       }
       navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
