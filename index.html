@@ -618,6 +618,7 @@
       let faceCanvasW = 0, faceCanvasH = 0;
       let gazeYaw = 0, gazePitch = 0;
       let eyeLook = { h: 0, v: 0 };
+      let facePivot = null;                  // centered pivot so the head spins in place
       let eyeL = null, eyeR = null;          // facecap eyeball meshes (hidden)
       let eyeLCenter = null, eyeRCenter = null; // geometry centroids, in faceRoot-local space
       let curBlink = 0;
@@ -712,12 +713,14 @@
               faceRoot.updateMatrixWorld(true);
               const cbox = new THREE.Box3().setFromObject(faceRoot);
               const center = cbox.getCenter(new THREE.Vector3());
-              faceRoot.position.x -= center.x;
-              faceRoot.position.y -= center.y;
-              faceRoot.position.z -= center.z;
-              faceRoot.position.y += 0.12; // eyes toward upper third, mouth stays visible
-              faceScene.add(faceRoot);
-              faceRoot.updateMatrixWorld(true);
+              faceRoot.position.sub(center); // center the model on its own origin
+              // Wrap in a pivot group whose origin is the face center, so the
+              // head rotates IN PLACE (symmetric left/right) instead of orbiting.
+              facePivot = new THREE.Group();
+              facePivot.add(faceRoot);
+              facePivot.position.y += 0.12; // eyes upper third, mouth visible
+              faceScene.add(facePivot);
+              facePivot.updateMatrixWorld(true);
               // Store eyeball geometry centroids (in faceRoot-local space) for
               // accurate pupil placement.
               if (eyeL) eyeLCenter = eyeCentroidLocal(eyeL);
@@ -756,12 +759,11 @@
           const idleYaw = Math.sin(now * 0.00016) * 0.022;
           const idlePitch = Math.sin(now * 0.00021 + 1.1) * 0.012;
           // Small head range, slow follow — most of the tracking is the eyes.
-          const targetYaw = nx * 0.16 + idleYaw;
-          const targetPitch = ny * 0.10 + idlePitch;
-          gazeYaw += (targetYaw - gazeYaw) * 0.018;   // much slower
+          const targetYaw = nx * 0.28 + idleYaw;       // turn more to each side
+          const targetPitch = ny * 0.15 + idlePitch;
+          gazeYaw += (targetYaw - gazeYaw) * 0.018;     // slow follow
           gazePitch += (targetPitch - gazePitch) * 0.018;
-          faceRoot.rotation.y = gazeYaw;
-          faceRoot.rotation.x = gazePitch;
+          if (facePivot) { facePivot.rotation.y = gazeYaw; facePivot.rotation.x = gazePitch; }
 
           // Smoothed eye-look value (drives the pupil overlay offset)
           eyeLook.h += (nx - eyeLook.h) * 0.08;
