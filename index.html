@@ -855,7 +855,7 @@
               // Pupil: a small CIRCLE. The sphere stretches the texture ~2x
               // horizontally, so draw a vertical ellipse (rx≈ry/2) so it reads
               // round. Only a little darker than the iris (not a near-black hole).
-              pg.beginPath(); pg.ellipse(32, 32, 3, 6, 0, 0, Math.PI * 2); pg.fillStyle = '#1c3f9e'; pg.fill();
+              pg.beginPath(); pg.ellipse(32, 32, 6, 12, 0, 0, Math.PI * 2); pg.fillStyle = '#1c3f9e'; pg.fill();
               pg.beginPath(); pg.ellipse(29, 27, 1.5, 2.6, 0, 0, Math.PI * 2); pg.fillStyle = 'rgba(226,238,255,0.95)'; pg.fill(); // catchlight
               const ptex = new THREE.CanvasTexture(pcv);
               ptex.colorSpace = THREE.SRGBColorSpace;
