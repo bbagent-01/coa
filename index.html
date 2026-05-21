@@ -133,7 +133,6 @@
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
     <button data-mode="spiralin">03 · spiral in</button>
-    <button data-mode="spiralfollow">05 · spiral follow</button>
     <button data-mode="facematrix">04 · face matrix</button>
     <span class="sep">/</span>
     <button id="heroToggle">content</button>
@@ -158,8 +157,8 @@
   <div class="label" id="label">coa · cursor</div>
   <div id="sizeCtrl">
     <span>head size</span>
-    <input type="range" id="sizeSlider" min="1" max="3.2" step="0.05" value="2">
-    <span id="sizeVal">2.00</span>
+    <input type="range" id="sizeSlider" min="1" max="3.2" step="0.05" value="1.45">
+    <span id="sizeVal">1.45</span>
   </div>
 
   <script type="module">
@@ -248,7 +247,10 @@
         'rgba(92, 138, 255, 1)',   // tint
         'rgba(140, 176, 255, 1)',  // lighter tint
         'rgba(28, 72, 200, 1)',    // shade
-        'rgba(64, 112, 240, 1)'    // mid
+        'rgba(64, 112, 240, 1)',   // mid
+        'rgba(64, 196, 255, 1)',   // bright cyan-blue glint
+        'rgba(120, 224, 255, 1)',  // light cyan dazzle
+        'rgba(0, 174, 255, 1)'     // vivid azure
       ];
 
       // ---- Grid: tight 9pt characters for cursor mode ----
@@ -269,8 +271,8 @@
       let prevMouseX = -9999, prevMouseY = -9999;
       let targetX = -9999, targetY = -9999;
       let trail = [];                          // history of mouse points
-      const TRAIL_MS = 3500;                   // tail lifetime (lasts much longer)
-      const TRAIL_MAX = 150;                   // dense enough the tail never gaps
+      const TRAIL_MS = 2000;                   // tail lifetime (shorter — fades faster)
+      const TRAIL_MAX = 80;                    // shorter tail; still gap-free
       let scx = -1, scy = -1;                  // spiral-follow center
       const RADIUS = 75;                       // trail blob radius (half the previous diameter)
       const RADIUS2 = RADIUS * RADIUS;
@@ -1241,9 +1243,10 @@
             let bright = 0.05 + spoke * inflow * (0.13 + conv * 0.30);
             bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
 
-            // Mouse blob rides on top — smooth ROUND blob
-            const cluster = clusterAt(px, py, r, c, now, true);
-            bright += cluster * 0.85;
+            // Mouse blob rides on top — amorphous, cursor-style (light-blue
+            // base + sparkle glints) rather than a solid round bright-blue blob.
+            const cluster = clusterAt(px, py, r, c, now, false);
+            bright += cluster * 0.9;
 
             // Char turnover — faster inside the blob
             const swapProb = cell.swap * 0.35 + cluster * 0.18;
@@ -1252,10 +1255,20 @@
 
             if (bright < 0.08) continue;
             let style;
-            if (cluster > 0.14) {
-              // The blob is ONLY bright blue (solid), slight per-cell variation.
-              const v = (((cell.phase * 131) | 0) % EYE_BLUES.length + EYE_BLUES.length) % EYE_BLUES.length;
-              style = EYE_BLUES[v];
+            if (cluster > 0.1) {
+              // Inside the blob: light-blue base (ramp capped) with sparse
+              // bright/cyan sparkle glints — matches cursor mode's dazzle.
+              const colIdx = Math.min(4, Math.floor(bright * (lastColor + 1)));
+              style = COLORS[colIdx];
+              if (cluster > 0.22) {
+                const tw = Math.sin(px * 0.40 + now * 0.0075)
+                         + Math.sin(py * 0.34 - now * 0.0061)
+                         + Math.sin((px + py) * 0.22 + now * 0.0090);
+                if (tw > 1.0) {
+                  const si = (((cell.phase * 997) | 0) % SPARKLE.length + SPARKLE.length) % SPARKLE.length;
+                  style = SPARKLE[si];
+                }
+              }
             } else {
               const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
               style = COLORS[colIdx];
@@ -1269,7 +1282,6 @@
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
         else if (mode === 'spiralin') drawCoalesce(now, false);
-        else if (mode === 'spiralfollow') drawCoalesce(now, true);
         else if (mode === 'facematrix') drawFaceMatrix(now);
         else drawFace(now);
         requestAnimationFrame(draw);
@@ -1310,10 +1322,10 @@
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'spiralfollow' ? 'spiral follow' : m === 'facematrix' ? 'face matrix' : m);
+        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'facematrix' ? 'face matrix' : m);
         document.body.style.cursor = (m === 'face' || m === 'facematrix') ? 'default' : 'crosshair';
         // cursor + spirals + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'spiralfollow' || m === 'facematrix') ? 'block' : 'none';
+        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         document.getElementById('sizeCtrl').style.display = m === 'facematrix' ? 'flex' : 'none';
