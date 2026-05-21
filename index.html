@@ -22,10 +22,10 @@
        match the WebGL scene background. */
     #vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
-      background: radial-gradient(ellipse 37% 59% at 50% 42%,
-        rgba(238,243,251,0) 30%,
-        rgba(238,243,251,0.95) 60%,
-        rgba(238,243,251,1) 82%);
+      background: radial-gradient(ellipse 40% 54% at 50% 60%,
+        rgba(238,243,251,0) 38%,
+        rgba(238,243,251,0.95) 64%,
+        rgba(238,243,251,1) 86%);
     }
     .pupil {
       position: fixed; z-index: 2; display: none;
@@ -197,6 +197,18 @@
         'rgba(124, 158, 222, 1)',
         'rgba(102, 140, 212, 1)',
         'rgba(86, 124, 200, 1)'
+      ];
+
+      // ---- Darker, higher-contrast ramp for the matrix face (light → navy)
+      // so shadows read clearly against the lit areas ----
+      const FACE_COLORS = [
+        'rgba(206, 221, 247, 1)',
+        'rgba(150, 181, 236, 1)',
+        'rgba(98, 138, 218, 1)',
+        'rgba(56, 94, 182, 1)',
+        'rgba(33, 64, 142, 1)',
+        'rgba(18, 42, 104, 1)',
+        'rgba(9, 24, 70, 1)'
       ];
 
       // ---- Sparkle accents: tints + shades of brand bright blue #2962ff,
@@ -950,7 +962,7 @@
           if (headCells[idx]) headCells[idx].ch = pickChar();
         }
 
-        const lastColor = COLORS.length - 1;
+        const lastColor = FACE_COLORS.length - 1;
         for (let r = 0; r < headRows; r++) {
           const py = r * HEAD_CHAR_H + HEAD_CHAR_H * 0.5;
           for (let c = 0; c < headCols; c++) {
@@ -958,34 +970,27 @@
             if (!cell) continue;
             const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
 
-            // Subtle moving light gray-blue background (faint — only fills the
-            // space around the face so it doesn't wash out the face contrast).
-            const w1 = 0.5 + 0.5 * Math.sin(px * 0.020 - now * 0.0005 + py * 0.012);
-            const w2 = 0.5 + 0.5 * Math.sin(px * 0.011 - now * 0.0003 - py * 0.008);
-            let bright = 0.05 + w1 * 0.045 + w2 * 0.03;
-
-            // Where the 3D face is rendered, drive brightness DIRECTLY from the
-            // render's shading: lit areas → light blue, shadows (eye sockets,
-            // brow, nose, lips, jaw) → darker blue. A base ink fills the whole
-            // face so the form reads; (1-lum) makes the features pop.
+            // Just the face shading (no background for now). Brightness comes
+            // DIRECTLY from the 3D render: lit areas → light blue, shadows →
+            // deep navy. Higher contrast so features read clearly.
             const ai = (r * headCols + c) * 4;
             const a = data[ai + 3];
-            if (a > 14) {
-              const lum = (data[ai] * 0.299 + data[ai + 1] * 0.587 + data[ai + 2] * 0.114) / 255;
-              let faceInk = 0.18 + (1 - lum) * 0.66;
-              // Gentle edge dissolve so ears / silhouette melt into the bg.
-              const fx = (px / width - 0.5), fy = (py / height - 0.42);
-              let rf = 1 - (fx * fx) / (0.36 * 0.36) - (fy * fy) / (0.60 * 0.60);
-              if (rf < 0) rf = 0;
-              const aw = Math.min(1, a / 180);
-              faceInk *= aw * rf;
-              if (faceInk > bright) bright = faceInk;   // face overrides the bg
-            }
+            if (a <= 14) continue;
+            const lum = (data[ai] * 0.299 + data[ai + 1] * 0.587 + data[ai + 2] * 0.114) / 255;
+            // Power curve deepens the shadows for contrast; base keeps the lit
+            // form faintly visible.
+            let bright = 0.14 + Math.pow(1 - lum, 1.35) * 0.92;
+            // Gentle edge dissolve (re-centered for the lowered face).
+            const fx = (px / width - 0.5), fy = (py / height - 0.58);
+            let rf = 1 - (fx * fx) / (0.40 * 0.40) - (fy * fy) / (0.40 * 0.40);
+            if (rf < 0) rf = 0;
+            const aw = Math.min(1, a / 180);
+            bright *= aw * rf;
 
-            if (bright > 0.95) bright = 0.95;
-            if (bright < 0.09) continue;
+            if (bright > 1) bright = 1;
+            if (bright < 0.10) continue;
             const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
-            ctx.fillStyle = COLORS[colIdx];
+            ctx.fillStyle = FACE_COLORS[colIdx];
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
           }
         }
