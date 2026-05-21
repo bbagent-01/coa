@@ -897,10 +897,16 @@
 
           // ---- 3D pupils track the cursor; eyelids crop them via depth ----
           if (pupilMeshL && pupilMeshR) {
-            const k = eyeRadiusLocal * 0.40;     // travel across the eye
+            const k = eyeRadiusLocal * 0.34;     // travel across the eye
             const down = eyeRadiusLocal * 0.08;  // sit slightly low in the opening
-            pupilMeshL.position.set(eyeLCenter.x + eyeLook.h * k, eyeLCenter.y - eyeLook.v * k - down, eyeLCenter.z);
-            pupilMeshR.position.set(eyeRCenter.x + eyeLook.h * k, eyeRCenter.y - eyeLook.v * k - down, eyeRCenter.z);
+            // Push each pupil OUTWARD (away from the nose) so at rest the eyes
+            // look straight out and never cross. Both shift the same way for h,
+            // keeping the gaze parallel.
+            const outB = eyeRadiusLocal * 0.45;
+            const sgnL = eyeLCenter.x < 0 ? -1 : 1;
+            const sgnR = eyeRCenter.x < 0 ? -1 : 1;
+            pupilMeshL.position.set(eyeLCenter.x + sgnL * outB + eyeLook.h * k, eyeLCenter.y - eyeLook.v * k - down, eyeLCenter.z);
+            pupilMeshR.position.set(eyeRCenter.x + sgnR * outB + eyeLook.h * k, eyeRCenter.y - eyeLook.v * k - down, eyeRCenter.z);
             if (pupilMat) pupilMat.opacity = 0.95 * (1 - curBlink);
           }
         }
