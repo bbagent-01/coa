@@ -22,10 +22,10 @@
        match the WebGL scene background. */
     #vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
-      background: radial-gradient(ellipse 27% 52% at 50% 43%,
-        rgba(238,243,251,0) 22%,
-        rgba(238,243,251,0.95) 50%,
-        rgba(238,243,251,1) 72%);
+      background: radial-gradient(ellipse 34% 56% at 50% 42%,
+        rgba(238,243,251,0) 26%,
+        rgba(238,243,251,0.95) 56%,
+        rgba(238,243,251,1) 80%);
     }
     .pupil {
       position: fixed; z-index: 2; display: none;
@@ -694,13 +694,18 @@
                 }
               });
               // Center + scale to frame the face
-              const box = new THREE.Box3().setFromObject(faceRoot);
-              const center = box.getCenter(new THREE.Vector3());
-              const size = box.getSize(new THREE.Vector3());
-              faceRoot.position.sub(center);
-              const fit = 2.05 / Math.max(size.x, size.y, size.z); // larger than the screen
+              // Scale FIRST, then center on the scaled bounding box (correct
+              // order — centering before scaling threw the framing off).
+              const size0 = new THREE.Box3().setFromObject(faceRoot).getSize(new THREE.Vector3());
+              const fit = 1.95 / Math.max(size0.x, size0.y, size0.z); // larger than the screen
               faceRoot.scale.setScalar(fit);
-              faceRoot.position.y += 0.30; // raise so eyes sit in the upper third
+              faceRoot.updateMatrixWorld(true);
+              const cbox = new THREE.Box3().setFromObject(faceRoot);
+              const center = cbox.getCenter(new THREE.Vector3());
+              faceRoot.position.x -= center.x;
+              faceRoot.position.y -= center.y;
+              faceRoot.position.z -= center.z;
+              faceRoot.position.y += 0.12; // eyes toward upper third, mouth stays visible
               faceScene.add(faceRoot);
               faceReady = true;
               // Temporary debug handles for live tuning
@@ -778,7 +783,7 @@
           const pa = projectToScreen(eyeL);
           const pb = projectToScreen(eyeR);
           const inter = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          const pr = Math.max(7, inter * 0.17);          // pupil radius scales with zoom
+          const pr = Math.max(7, inter * 0.14);          // pupil radius scales with zoom
           const offX = eyeLook.h * pr * 0.75;            // shift toward cursor
           const offY = eyeLook.v * pr * 0.75;
           const op = (0.92 * (1 - curBlink)).toFixed(2); // fade out during blink
