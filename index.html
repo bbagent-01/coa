@@ -22,10 +22,10 @@
        match the WebGL scene background. */
     #vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
-      background: radial-gradient(ellipse 34% 56% at 50% 42%,
-        rgba(238,243,251,0) 26%,
-        rgba(238,243,251,0.95) 56%,
-        rgba(238,243,251,1) 80%);
+      background: radial-gradient(ellipse 37% 59% at 50% 42%,
+        rgba(238,243,251,0) 30%,
+        rgba(238,243,251,0.95) 60%,
+        rgba(238,243,251,1) 82%);
     }
     .pupil {
       position: fixed; z-index: 2; display: none;
@@ -787,7 +787,7 @@
               // Scale FIRST, then center on the scaled bounding box (correct
               // order — centering before scaling threw the framing off).
               const size0 = new THREE.Box3().setFromObject(faceRoot).getSize(new THREE.Vector3());
-              const fit = 1.95 / Math.max(size0.x, size0.y, size0.z); // larger than the screen
+              const fit = 2.2 / Math.max(size0.x, size0.y, size0.z); // larger than the screen
               faceRoot.scale.setScalar(fit);
               faceRoot.updateMatrixWorld(true);
               const cbox = new THREE.Box3().setFromObject(faceRoot);
@@ -885,6 +885,13 @@
             for (const name in dict) {
               if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
             }
+            // Subtle warm / knowing expression — mostly in the eyes (a "smize"):
+            // gentle squint + raised cheeks + faint smile + one arched brow.
+            const setExpr = (n, v) => { if (dict[n] !== undefined) infl[dict[n]] = v; };
+            setExpr('eyeSquint_L', 0.18);  setExpr('eyeSquint_R', 0.18);
+            setExpr('cheekSquint_L', 0.13); setExpr('cheekSquint_R', 0.13);
+            setExpr('mouthSmile_L', 0.10);  setExpr('mouthSmile_R', 0.10);
+            setExpr('browOuterUp_R', 0.08); // faint knowing arch on one side
           }
 
           // ---- 3D pupils track the cursor; eyelids crop them via depth ----
@@ -1019,63 +1026,46 @@
       // MODE 3 — data flowing INWARD and coalescing at a center point
       // (Coalesce: transforming/coalescing large amounts of data into one)
       // ------------------------------------------------------------------
-      let coStreams = null;
-      function newCoStream(maxR, anywhere) {
-        return {
-          ang: Math.random() * Math.PI * 2,
-          r: anywhere ? (20 + Math.random() * maxR) : maxR,
-          speed: 0.5 + Math.random() * 1.9,
-          len: 5 + ((Math.random() * 13) | 0),
-          intensity: 0.30 + Math.random() * 0.55
-        };
-      }
-      function initCoStreams() {
-        const maxR = Math.hypot(width, height) * 0.6;
-        coStreams = new Array(220);
-        for (let i = 0; i < coStreams.length; i++) coStreams[i] = newCoStream(maxR, true);
-      }
       function drawCoalesce(now) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
         if (now - lastSnippetStamp > 1800) { stampSnippet(); lastSnippetStamp = now; }
-        if (!coStreams) initCoStreams();
 
         const cxp = width * 0.5, cyp = height * 0.5;
-        const maxR = Math.hypot(width, height) * 0.6;
+        const maxR = Math.hypot(width, height) * 0.5;
         const lastColor = COLORS.length - 1;
 
-        // Faint static field so the space isn't empty between streams
-        ctx.fillStyle = COLORS[0];
-        for (let r = 0; r < rows; r += 2) {
-          for (let c = 0; c < cols; c += 2) {
-            const cell = cells[r * cols + c];
-            if (cell) ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
-          }
-        }
-
-        // Inward-flowing data streams converging on the center; brighter as
-        // they near the center (coalescing into one point).
-        for (let i = 0; i < coStreams.length; i++) {
-          const s = coStreams[i];
-          s.r -= s.speed;
-          if (s.r < 6) { coStreams[i] = newCoStream(maxR, false); continue; }
-          const ca = Math.cos(s.ang), sa = Math.sin(s.ang);
-          const near = 1 - Math.min(1, s.r / maxR);  // 0 far → 1 at center
-          for (let j = 0; j < s.len; j++) {
-            const rr = s.r + j * CHAR_H;             // tail trails outward (behind the head)
-            const x = cxp + ca * rr;
-            const y = cyp + sa * rr;
-            if (x < 0 || x >= width || y < 0 || y >= height) continue;
-            const c = (x / CHAR_W) | 0;
-            const row = (y / CHAR_H) | 0;
-            const cell = cells[row * cols + c];
+        // Continuous SPIRAL-WAVE field flowing inward — broad waves of data
+        // sweeping toward the center (rather than tiny discrete beads). The
+        // angle term makes the wavefronts spiral; the time term moves them in.
+        for (let r = 0; r < rows; r++) {
+          const py = r * CHAR_H + CHAR_H * 0.5;
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            const cell = cells[idx];
             if (!cell) continue;
-            const t = 1 - j / s.len;                 // head brightest
-            const b = s.intensity * t * (0.35 + near * 0.85);
-            if (b < 0.07) continue;
-            const colIdx = Math.min(lastColor, Math.floor(b * (lastColor + 1)));
+            const px = c * CHAR_W + CHAR_W * 0.5;
+            const dx = px - cxp, dy = py - cyp;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ang = Math.atan2(dy, dx);
+
+            // Two spiral waves: a broad primary band + a finer overlay. Phase
+            // moves INWARD over time (constant-phase contours contract).
+            const w1 = Math.sin(dist * 0.013 - ang * 2.0 + now * 0.0016);
+            const w2 = Math.sin(dist * 0.027 - ang * 3.0 + now * 0.0023);
+            const wave = 0.5 + 0.36 * w1 + 0.14 * w2;          // ~0..1
+            const conv = Math.max(0, 1 - dist / (maxR * 1.15)); // brighter toward center
+            let bright = 0.05 + wave * (0.10 + conv * 0.32);
+            bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
+
+            // Calm char turnover (slow) so it doesn't look jittery
+            if (cell.stick > 0) cell.stick--;
+            else if (Math.random() < cell.swap * 0.35) cell.ch = pickChar();
+
+            if (bright < 0.08) continue;
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = COLORS[colIdx];
-            ctx.fillText(cell.ch, c * CHAR_W, row * CHAR_H);
+            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
           }
         }
       }
