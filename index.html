@@ -1341,49 +1341,53 @@
       }
 
       // ------------------------------------------------------------------
-      // DATA STREAMS overlay — straight horizontal "code rain" (Matrix-style,
-      // but flowing LEFT to RIGHT) drawn IN FRONT of the matrix face. No wiggle.
+      // DATA STREAMS — straight horizontal "code rain" running THROUGH the same
+      // dense character grid as the matrix face (same cell size + same glyphs),
+      // flowing left to right. Each stream lights up one grid row as it passes.
       // ------------------------------------------------------------------
       let dStreams = null;
-      const D_STREAM_N = 46;                 // moderate count (overlaid on the face)
-      function newDStream(startX) {
+      const D_STREAM_N = 46;
+      function newDStream(startCol) {
+        const tail = 60 + ((Math.random() * 90) | 0);   // very long tails (grid cells)
         return {
-          x: startX,
-          y: (Math.random() * height) | 0,        // fixed row — perfectly straight
-          speed: 0.45 + Math.random() * 0.85,     // fairly slow
-          tail: 42 + ((Math.random() * 64) | 0),  // very long tails (chars)
-          seed: (Math.random() * 100000) | 0
+          row: (Math.random() * Math.max(1, headRows)) | 0,                    // fixed grid row
+          hc: startCol !== undefined ? startCol : -tail - Math.random() * 60,  // head column
+          speed: 0.25 + Math.random() * 0.55,            // grid cells per frame (slow)
+          tail: tail
         };
       }
       function ensureDStreams() {
         if (!dStreams || dStreams.length !== D_STREAM_N) {
           dStreams = new Array(D_STREAM_N);
-          for (let i = 0; i < D_STREAM_N; i++) dStreams[i] = newDStream((Math.random() * (width + 700)) - 350);
+          for (let i = 0; i < D_STREAM_N; i++) dStreams[i] = newDStream((Math.random() * (headCols + 120)) - 60);
         }
       }
-      // Straight horizontal streams drawn over whatever is already on the canvas
-      // (no background wipe). Bright head, long fading tail, dead straight.
+      // Streams drawn on the SAME grid as the face (HEAD_CHAR_W/H + HEAD_FONT_SIZE),
+      // reusing the grid's own characters, so they read as part of the matrix
+      // rather than a separate scrolling layer. Bright head, long fading tail.
       function drawStreamsOverlay(now) {
         ensureDStreams();
-        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
-        const step = CHAR_W;
+        ctx.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
         const flameLast = FLAME.length - 1;
         for (let si = 0; si < D_STREAM_N; si++) {
           const s = dStreams[si];
-          s.x += s.speed;
-          if (s.x - s.tail * step > width + 4) { dStreams[si] = newDStream(-Math.random() * 400 - 20); continue; }
-          const y = s.y;
+          s.hc += s.speed;
+          if (s.hc - s.tail > headCols + 2) { dStreams[si] = newDStream(); continue; }
+          const gr = s.row;
+          const baseY = gr * HEAD_CHAR_H;
+          const headC = s.hc | 0;
           for (let i = 0; i < s.tail; i++) {
-            const cx = s.x - i * step;
-            if (cx < -step) break;        // rest of the tail is off the left edge
-            if (cx > width) continue;     // head not on-screen yet
-            const t = 1 - i / s.tail;     // 1 at the bright head, 0 at the tail tip
-            const alpha = t * t * 0.95;   // bright head, long fading tail
+            const c = headC - i;
+            if (c < 0) break;            // rest of the tail is off the left edge
+            if (c >= headCols) continue; // head not on-screen yet
+            const t = 1 - i / s.tail;    // 1 at the bright head, 0 at the tail tip
+            const alpha = t * t * 0.95;
             if (alpha < 0.03) continue;
+            const cell = headCells[gr * headCols + c];
+            if (!cell) continue;
             const fi = Math.min(flameLast, (((1 - t) * FLAME.length) | 0));
             ctx.fillStyle = FLAME[fi] + alpha.toFixed(3) + ')';
-            const ch = CHAR_POOL[(s.seed + i * 131 + ((now * 0.0011 + i * 0.6) | 0)) % CHAR_POOL.length];
-            ctx.fillText(ch, cx, y);
+            ctx.fillText(cell.ch, c * HEAD_CHAR_W, baseY);
           }
         }
       }
