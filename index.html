@@ -199,16 +199,29 @@
         'rgba(86, 124, 200, 1)'
       ];
 
-      // ---- Darker, higher-contrast ramp for the matrix face (light → navy)
-      // so shadows read clearly against the lit areas ----
+      // ---- Wide ramp for the matrix face: many steps from a barely-there
+      // light tint → deep navy, for smooth shading + darker shadows ----
       const FACE_COLORS = [
-        'rgba(206, 221, 247, 1)',
-        'rgba(150, 181, 236, 1)',
-        'rgba(98, 138, 218, 1)',
-        'rgba(56, 94, 182, 1)',
-        'rgba(33, 64, 142, 1)',
-        'rgba(18, 42, 104, 1)',
-        'rgba(9, 24, 70, 1)'
+        'rgba(232, 240, 252, 1)',
+        'rgba(214, 227, 249, 1)',
+        'rgba(192, 212, 245, 1)',
+        'rgba(166, 192, 238, 1)',
+        'rgba(138, 169, 230, 1)',
+        'rgba(110, 146, 219, 1)',
+        'rgba(84, 122, 204, 1)',
+        'rgba(60, 97, 184, 1)',
+        'rgba(40, 73, 158, 1)',
+        'rgba(25, 52, 128, 1)',
+        'rgba(14, 35, 96, 1)',
+        'rgba(7, 21, 64, 1)'
+      ];
+      // ---- Blue iris tones (around brand #2962ff) for the eyes ----
+      const EYE_BLUES = [
+        'rgba(41, 98, 255, 1)',
+        'rgba(74, 126, 255, 1)',
+        'rgba(30, 80, 226, 1)',
+        'rgba(96, 150, 255, 1)',
+        'rgba(52, 110, 244, 1)'
       ];
 
       // ---- Sparkle accents: tints + shades of brand bright blue #2962ff,
@@ -817,7 +830,18 @@
               // Pupils: flat-shaded light spheres at each eyeball center,
               // children of faceRoot. MeshBasic = flat color (no iris ring),
               // depthTest lets the eyelids (face mesh) crop them to the opening.
-              pupilMat = new THREE.MeshBasicMaterial({ color: 0xb4c2d8, transparent: true, opacity: 0.95 });
+              // Blue iris: brand #2962ff with a soft radial highlight/shade so
+              // it isn't flat ("blue eyes" with slight variation).
+              const pcv = document.createElement('canvas'); pcv.width = pcv.height = 64;
+              const pg = pcv.getContext('2d');
+              const grd = pg.createRadialGradient(26, 22, 3, 32, 32, 38);
+              grd.addColorStop(0, '#6a93ff');
+              grd.addColorStop(0.45, '#2962ff');
+              grd.addColorStop(1, '#1a44bd');
+              pg.fillStyle = grd; pg.fillRect(0, 0, 64, 64);
+              const ptex = new THREE.CanvasTexture(pcv);
+              ptex.colorSpace = THREE.SRGBColorSpace;
+              pupilMat = new THREE.MeshBasicMaterial({ map: ptex, transparent: true, opacity: 0.95 });
               if (eyeL) {
                 const s = eyeSphereLocal(eyeL);
                 eyeLCenter = s.center; eyeRadiusLocal = s.radius;
@@ -963,24 +987,44 @@
         }
 
         const lastColor = FACE_COLORS.length - 1;
+
+        // Pass 1 — a very faint code field EVERYWHERE so nothing is ever blank
+        // white (sparse so it stays light and cheap). Covers bg + lit face.
+        for (let r = 0; r < headRows; r += 2) {
+          for (let c = 0; c < headCols; c += 2) {
+            const cell = headCells[r * headCols + c];
+            if (!cell) continue;
+            const amb = 0.04 + 0.03 * (0.5 + 0.5 * Math.sin(cell.phase + now * 0.0009));
+            const ci = Math.min(lastColor, Math.floor(amb * (lastColor + 1)));
+            ctx.fillStyle = FACE_COLORS[ci];
+            ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+          }
+        }
+
+        // Pass 2 — the face shading, full density on top.
         for (let r = 0; r < headRows; r++) {
           const py = r * HEAD_CHAR_H + HEAD_CHAR_H * 0.5;
           for (let c = 0; c < headCols; c++) {
-            const cell = headCells[r * headCols + c];
-            if (!cell) continue;
-            const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
-
-            // Just the face shading (no background for now). Brightness comes
-            // DIRECTLY from the 3D render: lit areas → light blue, shadows →
-            // deep navy. Higher contrast so features read clearly.
             const ai = (r * headCols + c) * 4;
             const a = data[ai + 3];
             if (a <= 14) continue;
-            const lum = (data[ai] * 0.299 + data[ai + 1] * 0.587 + data[ai + 2] * 0.114) / 255;
-            // Power curve deepens the shadows for contrast; base keeps the lit
-            // form faintly visible.
-            let bright = 0.14 + Math.pow(1 - lum, 1.35) * 0.92;
-            // Gentle edge dissolve (re-centered for the lowered face).
+            const cell = headCells[r * headCols + c];
+            if (!cell) continue;
+            const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
+            const R = data[ai], G = data[ai + 1], B = data[ai + 2];
+
+            // Blue eyes: pupils render as strongly-blue pixels → draw them in
+            // brand-blue tones (with slight variation) instead of the ramp.
+            if (B - R > 70 && B > 120) {
+              ctx.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
+              ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+              continue;
+            }
+
+            const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
+            // Base keeps lit areas as light-blue code (never white); power curve
+            // deepens shadows for contrast across the wide ramp.
+            let bright = 0.13 + Math.pow(1 - lum, 1.35) * 0.92;
             const fx = (px / width - 0.5), fy = (py / height - 0.58);
             let rf = 1 - (fx * fx) / (0.40 * 0.40) - (fy * fy) / (0.40 * 0.40);
             if (rf < 0) rf = 0;
@@ -988,7 +1032,7 @@
             bright *= aw * rf;
 
             if (bright > 1) bright = 1;
-            if (bright < 0.10) continue;
+            if (bright < 0.06) continue; // (sparse ambient already underneath)
             const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = FACE_COLORS[colIdx];
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
