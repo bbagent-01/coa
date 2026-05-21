@@ -85,7 +85,7 @@
   <nav class="nav">
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
-    <button data-mode="spiral">03 · spiral</button>
+    <button data-mode="coalesce">03 · coalesce</button>
   </nav>
   <div class="label" id="label">coa · cursor</div>
 
@@ -141,15 +141,14 @@
         'rgba(86, 124, 200, 1)'
       ];
 
-      // ---- Sparkle palette: brighter, more saturated blues (+ cyan/violet)
-      // that the mouse cluster dances between for a dazzling feel ----
+      // ---- Sparkle accents: tints + shades of brand bright blue #2962ff,
+      // sprinkled sparsely in the mouse cluster as glints ----
       const SPARKLE = [
-        'rgba(120, 175, 255, 1)',  // bright blue
-        'rgba(78, 132, 248, 1)',   // vivid blue
-        'rgba(150, 208, 255, 1)',  // sky blue
-        'rgba(96, 112, 240, 1)',   // indigo-blue
-        'rgba(64, 200, 235, 1)',   // cyan-blue
-        'rgba(138, 124, 255, 1)'   // blue-violet
+        'rgba(41, 98, 255, 1)',    // #2962ff base
+        'rgba(92, 138, 255, 1)',   // tint
+        'rgba(140, 176, 255, 1)',  // lighter tint
+        'rgba(28, 72, 200, 1)',    // shade
+        'rgba(64, 112, 240, 1)'    // mid
       ];
 
       // ---- Grid: tight 9pt characters for cursor mode ----
@@ -172,11 +171,10 @@
       let trail = [];                          // history of mouse points
       const TRAIL_MS = 1100;                   // tail lifetime
       const TRAIL_MAX = 26;                    // hard cap
-      const RADIUS = 125;                      // trail blob radius (tighter than before)
+      const RADIUS = 190;                      // trail blob radius
       const RADIUS2 = RADIUS * RADIUS;
-      const NB = 5;                            // orbiting sub-blobs in the rest cluster
-      const REST_ORBIT = 18;                   // orbit radius (small → still reads as one blob)
-      const BLOB_RAD = 46;                     // each sub-blob falloff radius
+      const HEAD_RADIUS = 200;                 // amorphous wobble field around the cursor
+      const HEAD_RADIUS2 = HEAD_RADIUS * HEAD_RADIUS;
 
       function buildCells() {
         cells = new Array(cols * rows);
@@ -322,7 +320,7 @@
         for (let i = 0; i < trail.length; i++) {
           if (trail[i].stretch > maxStretch) maxStretch = trail[i].stretch;
         }
-        const bbPad = Math.max(RADIUS * maxStretch, REST_ORBIT + BLOB_RAD) + 40;
+        const bbPad = Math.max(RADIUS * maxStretch, HEAD_RADIUS * 1.6) + 40;
         const bbMinC = Math.max(0, Math.floor((bbMinX - bbPad) / CHAR_W));
         const bbMaxC = Math.min(cols, Math.ceil((bbMaxX + bbPad) / CHAR_W));
         const bbMinR = Math.max(0, Math.floor((bbMinY - bbPad) / CHAR_H));
@@ -344,18 +342,6 @@
         const cx = width * 0.5;
         const cy = height * 0.5;
         const swirlT = now * 0.00015;
-
-        // Five micro-blobs orbiting the cursor — overlapping so they read as
-        // one amorphous cluster but with constant internal motion.
-        const blobCenters = [];
-        if (mouseX > -1000) {
-          for (let i = 0; i < NB; i++) {
-            const baseA = (i / NB) * Math.PI * 2;
-            const a = baseA + now * (0.0006 + i * 0.00012);
-            const orb = REST_ORBIT * (0.65 + 0.35 * Math.sin(now * 0.0011 + i * 1.7));
-            blobCenters.push({ x: mouseX + Math.cos(a) * orb, y: mouseY + Math.sin(a) * orb });
-          }
-        }
 
         // Walk every cell. Threshold prevents drawing invisible glyphs.
         // For each cell compute brightness from:
@@ -416,14 +402,24 @@
                 const ageW = (1 - age) * (1 - age);
                 trailBoost += f * ageW;
               }
-              // five orbiting micro-blobs = the small, lively rest cluster
-              for (let i = 0; i < blobCenters.length; i++) {
-                const bx = px - blobCenters[i].x;
-                const by = py - blobCenters[i].y;
-                const bd2 = bx * bx + by * by;
-                if (bd2 > BLOB_RAD * BLOB_RAD) continue;
-                const bf = 1 - Math.sqrt(bd2) / BLOB_RAD;
-                trailBoost += bf * bf * 0.7;
+              // Amorphous wobble blob at the cursor — radius pulses by angle
+              // over time so the cluster constantly shifts shape.
+              const hdx = px - mouseX;
+              const hdy = py - mouseY;
+              const hd2 = hdx * hdx + hdy * hdy;
+              if (hd2 < HEAD_RADIUS2 * 1.6) {
+                const ang2 = Math.atan2(hdy, hdx);
+                const wobble = 1
+                  + 0.42 * Math.sin(ang2 * 3 + now * 0.0026)
+                  + 0.26 * Math.sin(ang2 * 5 - now * 0.0019)
+                  + 0.16 * Math.sin(ang2 * 2 + now * 0.0015);
+                const wr = HEAD_RADIUS * wobble;
+                const hd = Math.sqrt(hd2);
+                if (hd < wr) {
+                  let hf = 1 - hd / wr;
+                  hf = hf * hf;
+                  trailBoost += hf * 0.9;
+                }
               }
             }
 
@@ -447,21 +443,21 @@
 
             if (bright < 0.08) continue; // below visibility threshold
 
-            // Color: the cluster dazzles through the saturated SPARKLE palette
-            // (index dances over time + space); everything else uses the soft
-            // background ramp (light grayish-blue → mid blue).
-            if (cluster > 0.16) {
-              const sp = Math.sin(px * 0.05 + now * 0.005)
-                       + Math.sin(py * 0.06 - now * 0.0042)
-                       + Math.sin((px + py) * 0.03 + now * 0.006);
-              let si = Math.floor(((sp / 3) * 0.5 + 0.5) * SPARKLE.length);
-              if (si < 0) si = 0;
-              if (si >= SPARKLE.length) si = SPARKLE.length - 1;
-              ctx.fillStyle = SPARKLE[si];
-            } else {
-              const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
-              ctx.fillStyle = COLORS[colIdx];
+            // Base color: soft background ramp (light grayish-blue → mid blue).
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            let style = COLORS[colIdx];
+            // Sparse twinkling glints of bright #2962ff (tints/shades) inside
+            // the cluster only — adds sparkle without making it busy.
+            if (cluster > 0.30) {
+              const tw = Math.sin(px * 0.40 + now * 0.0075)
+                       + Math.sin(py * 0.34 - now * 0.0061)
+                       + Math.sin((px + py) * 0.22 + now * 0.0090);
+              if (tw > 1.85) {
+                const si = (((cell.phase * 997) | 0) % SPARKLE.length + SPARKLE.length) % SPARKLE.length;
+                style = SPARKLE[si];
+              }
             }
+            ctx.fillStyle = style;
             ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
           }
         }
@@ -754,14 +750,14 @@
               if (eyeL) {
                 const s = eyeSphereLocal(eyeL);
                 eyeLCenter = s.center; eyeRadiusLocal = s.radius;
-                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.66, 20, 20), pupilMat);
+                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.50, 20, 20), pupilMat);
                 pupilMeshL.position.copy(s.center);
                 faceRoot.add(pupilMeshL);
               }
               if (eyeR) {
                 const s = eyeSphereLocal(eyeR);
                 eyeRCenter = s.center;
-                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.66, 20, 20), pupilMat);
+                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.50, 20, 20), pupilMat);
                 pupilMeshR.position.copy(s.center);
                 faceRoot.add(pupilMeshR);
               }
@@ -953,55 +949,73 @@
       }
 
       // ------------------------------------------------------------------
-      // MODE 3 — data spiralling INWARD toward the cursor
+      // MODE 3 — data flowing INWARD and coalescing at a center point
+      // (Coalesce: transforming/coalescing large amounts of data into one)
       // ------------------------------------------------------------------
-      function drawSpiral(now) {
-        if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; }
-        else if (targetX > -1000) {
-          mouseX += (targetX - mouseX) * 0.12;
-          mouseY += (targetY - mouseY) * 0.12;
-        }
-        const mx = mouseX > -1000 ? mouseX : width * 0.5;
-        const my = mouseY > -1000 ? mouseY : height * 0.5;
-
+      let coStreams = null;
+      function newCoStream(maxR, anywhere) {
+        return {
+          ang: Math.random() * Math.PI * 2,
+          r: anywhere ? (20 + Math.random() * maxR) : maxR,
+          speed: 0.5 + Math.random() * 1.9,
+          len: 5 + ((Math.random() * 13) | 0),
+          intensity: 0.30 + Math.random() * 0.55
+        };
+      }
+      function initCoStreams() {
+        const maxR = Math.hypot(width, height) * 0.6;
+        coStreams = new Array(220);
+        for (let i = 0; i < coStreams.length; i++) coStreams[i] = newCoStream(maxR, true);
+      }
+      function drawCoalesce(now) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
-
         if (now - lastSnippetStamp > 1800) { stampSnippet(); lastSnippetStamp = now; }
+        if (!coStreams) initCoStreams();
 
+        const cxp = width * 0.5, cyp = height * 0.5;
+        const maxR = Math.hypot(width, height) * 0.6;
         const lastColor = COLORS.length - 1;
-        const maxDim = Math.max(width, height);
-        for (let r = 0; r < rows; r++) {
-          const py = r * CHAR_H + CHAR_H * 0.5;
-          for (let c = 0; c < cols; c++) {
-            const idx = r * cols + c;
-            const cell = cells[idx];
+
+        // Faint static field so the space isn't empty between streams
+        ctx.fillStyle = COLORS[0];
+        for (let r = 0; r < rows; r += 2) {
+          for (let c = 0; c < cols; c += 2) {
+            const cell = cells[r * cols + c];
+            if (cell) ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+          }
+        }
+
+        // Inward-flowing data streams converging on the center; brighter as
+        // they near the center (coalescing into one point).
+        for (let i = 0; i < coStreams.length; i++) {
+          const s = coStreams[i];
+          s.r -= s.speed;
+          if (s.r < 6) { coStreams[i] = newCoStream(maxR, false); continue; }
+          const ca = Math.cos(s.ang), sa = Math.sin(s.ang);
+          const near = 1 - Math.min(1, s.r / maxR);  // 0 far → 1 at center
+          for (let j = 0; j < s.len; j++) {
+            const rr = s.r + j * CHAR_H;             // tail trails outward (behind the head)
+            const x = cxp + ca * rr;
+            const y = cyp + sa * rr;
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+            const c = (x / CHAR_W) | 0;
+            const row = (y / CHAR_H) | 0;
+            const cell = cells[row * cols + c];
             if (!cell) continue;
-            const px = c * CHAR_W + CHAR_W * 0.5;
-            const dx = px - mx, dy = py - my;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const ang = Math.atan2(dy, dx);
-            // Spiral arms whose phase moves INWARD over time → everything
-            // appears to be drawn toward the cursor.
-            const spiral = 0.5 + 0.5 * Math.sin(ang * 4 + dist * 0.018 + now * 0.0024);
-            const conv = Math.max(0, 1 - dist / (maxDim * 0.7)); // brighter near the cursor
-            let bright = 0.05 + spiral * (0.10 + conv * 0.24);
-            bright += 0.03 + 0.04 * Math.sin(cell.phase + now * 0.0011);
-
-            if (cell.stick > 0) cell.stick--;
-            else if (Math.random() < cell.swap) cell.ch = pickChar();
-
-            if (bright < 0.08) continue;
-            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            const t = 1 - j / s.len;                 // head brightest
+            const b = s.intensity * t * (0.35 + near * 0.85);
+            if (b < 0.07) continue;
+            const colIdx = Math.min(lastColor, Math.floor(b * (lastColor + 1)));
             ctx.fillStyle = COLORS[colIdx];
-            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+            ctx.fillText(cell.ch, c * CHAR_W, row * CHAR_H);
           }
         }
       }
 
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
-        else if (mode === 'spiral') drawSpiral(now);
+        else if (mode === 'coalesce') drawCoalesce(now);
         else drawFace(now);
         requestAnimationFrame(draw);
       }
@@ -1018,8 +1032,8 @@
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
         labelEl.textContent = 'coa · ' + m;
         document.body.style.cursor = m === 'face' ? 'default' : 'crosshair';
-        // cursor + spiral both use the 2D ASCII canvas; face uses the WebGL one
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiral') ? 'block' : 'none';
+        // cursor + coalesce both use the 2D ASCII canvas; face uses the WebGL one
+        asciiCanvasEl.style.display = (m === 'cursor' || m === 'coalesce') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         if (m === 'face') resizeFace();
