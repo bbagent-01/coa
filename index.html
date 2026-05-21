@@ -132,6 +132,7 @@
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
     <button data-mode="spiralin">03 · spiral in</button>
+    <button data-mode="spiralfollow">05 · spiral follow</button>
     <button data-mode="facematrix">04 · face matrix</button>
     <span class="sep">/</span>
     <button id="heroToggle">content</button>
@@ -267,7 +268,8 @@
       let targetX = -9999, targetY = -9999;
       let trail = [];                          // history of mouse points
       const TRAIL_MS = 3500;                   // tail lifetime (lasts much longer)
-      const TRAIL_MAX = 60;                    // hard cap on points
+      const TRAIL_MAX = 150;                   // dense enough the tail never gaps
+      let scx = -1, scy = -1;                  // spiral-follow center
       const RADIUS = 75;                       // trail blob radius (half the previous diameter)
       const RADIUS2 = RADIUS * RADIUS;
       const HEAD_RADIUS = 75;                  // amorphous wobble field (half diameter)
@@ -359,12 +361,12 @@
           mouseX += (targetX - mouseX) * 0.16;
           mouseY += (targetY - mouseY) * 0.16;
         }
-        // Push a point every 3rd frame → a long trail without too many points.
-        trailFrame++;
-        if (targetX > -1000 && trailFrame % 3 === 0) {
+        // Push a point EVERY frame so the tail stays continuous (no gaps/skips
+        // when moving fast). Minimal jitter keeps the blob smooth.
+        if (targetX > -1000) {
           const mdx = mouseX - prevMouseX, mdy = mouseY - prevMouseY;
           const moveDist = Math.sqrt(mdx * mdx + mdy * mdy);
-          const jitter = Math.max(0, 14 - moveDist) * 0.6;
+          const jitter = Math.max(0, 8 - moveDist) * 0.35;
           trail.push({ x: mouseX + (Math.random() - 0.5) * jitter, y: mouseY + (Math.random() - 0.5) * jitter, t: now });
         }
         while (trail.length && (now - trail[0].t > TRAIL_MS || trail.length > TRAIL_MAX)) trail.shift();
@@ -382,7 +384,7 @@
             const uxn = vx / sp, uyn = vy / sp;
             p.ux = uxn * ca - uyn * sa;
             p.uy = uxn * sa + uyn * ca;
-            p.stretch = 1 + Math.min(0.45, sp * 0.012);
+            p.stretch = 1 + Math.min(0.45, sp * 0.025);
           } else { p.ux = 0; p.uy = 0; p.stretch = 1; }
           if (p.wob === undefined) p.wob = Math.random() * Math.PI * 2;
           if (p.stretch > maxStretch) maxStretch = p.stretch;
@@ -402,25 +404,29 @@
       }
 
       // Returns the blob/cluster intensity (0..1) at a cell.
-      function clusterAt(px, py, r, c, now) {
+      // smooth = true → clean ROUND blob (no wobble/stretch/noise); used by the
+      // spiral so the cursor reads as a solid smooth blob.
+      function clusterAt(px, py, r, c, now, smooth) {
         let trailBoost = 0;
         if (r >= bbMinR && r < bbMaxR && c >= bbMinC && c < bbMaxC) {
           for (let i = 0; i < trail.length; i++) {
             const p = trail[i];
             const dx = px - p.x, dy = py - p.y;
             let warpedD2;
-            if (p.sp > 0.6) {
+            if (!smooth && p.sp > 0.6) {
               const along = dx * p.ux + dy * p.uy;
               const perp = -dx * p.uy + dy * p.ux;
               const a = along / p.stretch;
               warpedD2 = a * a + perp * perp;
             } else { warpedD2 = dx * dx + dy * dy; }
             if (warpedD2 > RADIUS2 * 1.3) continue;
-            const localAng = Math.atan2(dy, dx);
-            const wob = 1 + 0.22 * Math.sin(localAng * 3 + now * 0.0028 + p.wob)
-                          + 0.14 * Math.sin(localAng * 5 - now * 0.0019 + p.wob * 1.7);
-            const wRad = RADIUS * wob;
             const d = Math.sqrt(warpedD2);
+            let wRad = RADIUS;
+            if (!smooth) {
+              const localAng = Math.atan2(dy, dx);
+              wRad = RADIUS * (1 + 0.22 * Math.sin(localAng * 3 + now * 0.0028 + p.wob)
+                                + 0.14 * Math.sin(localAng * 5 - now * 0.0019 + p.wob * 1.7));
+            }
             if (d > wRad) continue;
             let f = 1 - d / wRad; f = f * f;
             const age = (now - p.t) / TRAIL_MS;
@@ -430,17 +436,21 @@
           const hdx = px - mouseX, hdy = py - mouseY;
           const hd2 = hdx * hdx + hdy * hdy;
           if (hd2 < HEAD_RADIUS2 * 1.6) {
-            const ang2 = Math.atan2(hdy, hdx);
-            const wobble = 1 + 0.42 * Math.sin(ang2 * 3 + now * 0.0026)
-                             + 0.26 * Math.sin(ang2 * 5 - now * 0.0019)
-                             + 0.16 * Math.sin(ang2 * 2 + now * 0.0015);
-            const wr = HEAD_RADIUS * wobble;
+            let wr = HEAD_RADIUS;
+            if (!smooth) {
+              const ang2 = Math.atan2(hdy, hdx);
+              wr = HEAD_RADIUS * (1 + 0.42 * Math.sin(ang2 * 3 + now * 0.0026)
+                                   + 0.26 * Math.sin(ang2 * 5 - now * 0.0019)
+                                   + 0.16 * Math.sin(ang2 * 2 + now * 0.0015));
+            }
             const hd = Math.sqrt(hd2);
             if (hd < wr) { let hf = 1 - hd / wr; hf = hf * hf; trailBoost += hf * 0.9; }
           }
         }
-        const organic = Math.sin(px * 0.018 + now * 0.0011) * Math.sin(py * 0.022 - now * 0.0008) * 0.5 + 0.5;
-        trailBoost *= 0.55 + organic * 0.9;
+        if (!smooth) {
+          const organic = Math.sin(px * 0.018 + now * 0.0011) * Math.sin(py * 0.022 - now * 0.0008) * 0.5 + 0.5;
+          trailBoost *= 0.55 + organic * 0.9;
+        }
         return 1 - Math.exp(-trailBoost * 1.4);
       }
 
@@ -493,8 +503,8 @@
             // --- idle shimmer ---
             bright += 0.04 + 0.05 * Math.sin(cell.phase + now * 0.0011);
 
-            // --- mouse blob/cluster (shared helper) ---
-            const cluster = clusterAt(px, py, r, c, now);
+            // --- mouse blob/cluster (amorphous for cursor mode) ---
+            const cluster = clusterAt(px, py, r, c, now, false);
             bright += cluster * 0.95;
 
             // Cluster cells swap chars faster
@@ -1174,13 +1184,24 @@
       // MODE 3 — data flowing INWARD and coalescing at a center point
       // (Coalesce: transforming/coalescing large amounts of data into one)
       // ------------------------------------------------------------------
-      function drawCoalesce(now) {
+      function drawCoalesce(now, follow) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
         if (now - lastSnippetStamp > 1800) { stampSnippet(); lastSnippetStamp = now; }
         updateMouseTrail(now); // mouse blob rides on top of the spiral
 
-        const cxp = width * 0.5, cyp = height * 0.5;
+        // Spiral center: fixed (spiral in) or slowly drifting to the cursor (spiral follow)
+        let cxp, cyp;
+        if (follow) {
+          if (scx < 0) { scx = width * 0.5; scy = height * 0.5; }
+          const tx = targetX > -1000 ? targetX : width * 0.5;
+          const ty = targetY > -1000 ? targetY : height * 0.5;
+          scx += (tx - scx) * 0.015; // slow drift toward the mouse
+          scy += (ty - scy) * 0.015;
+          cxp = scx; cyp = scy;
+        } else {
+          cxp = width * 0.5; cyp = height * 0.5;
+        }
         const maxR = Math.hypot(width, height) * 0.5;
         const lastColor = COLORS.length - 1;
 
@@ -1218,9 +1239,9 @@
             let bright = 0.05 + spoke * inflow * (0.13 + conv * 0.30);
             bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
 
-            // Mouse blob rides on top
-            const cluster = clusterAt(px, py, r, c, now);
-            bright += cluster * 0.75;
+            // Mouse blob rides on top — smooth ROUND blob
+            const cluster = clusterAt(px, py, r, c, now, true);
+            bright += cluster * 0.85;
 
             // Char turnover — faster inside the blob
             const swapProb = cell.swap * 0.35 + cluster * 0.18;
@@ -1228,17 +1249,14 @@
             else if (Math.random() < swapProb) cell.ch = pickChar();
 
             if (bright < 0.08) continue;
-            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
-            let style = COLORS[colIdx];
-            // Higher % of bright #2962ff inside the blob area
-            if (cluster > 0.22) {
-              const tw = Math.sin(px * 0.40 + now * 0.0075)
-                       + Math.sin(py * 0.34 - now * 0.0061)
-                       + Math.sin((px + py) * 0.22 + now * 0.0090);
-              if (tw > 0.8) {
-                const si = (((cell.phase * 997) | 0) % SPARKLE.length + SPARKLE.length) % SPARKLE.length;
-                style = SPARKLE[si];
-              }
+            let style;
+            if (cluster > 0.14) {
+              // The blob is ONLY bright blue (solid), slight per-cell variation.
+              const v = (((cell.phase * 131) | 0) % EYE_BLUES.length + EYE_BLUES.length) % EYE_BLUES.length;
+              style = EYE_BLUES[v];
+            } else {
+              const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+              style = COLORS[colIdx];
             }
             ctx.fillStyle = style;
             ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
@@ -1248,7 +1266,8 @@
 
       function draw(now) {
         if (mode === 'cursor') drawCursor(now);
-        else if (mode === 'spiralin') drawCoalesce(now);
+        else if (mode === 'spiralin') drawCoalesce(now, false);
+        else if (mode === 'spiralfollow') drawCoalesce(now, true);
         else if (mode === 'facematrix') drawFaceMatrix(now);
         else drawFace(now);
         requestAnimationFrame(draw);
@@ -1287,10 +1306,10 @@
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'facematrix' ? 'face matrix' : m);
+        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'spiralfollow' ? 'spiral follow' : m === 'facematrix' ? 'face matrix' : m);
         document.body.style.cursor = (m === 'face' || m === 'facematrix') ? 'default' : 'crosshair';
-        // cursor + spiralin + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
+        // cursor + spirals + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
+        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'spiralfollow' || m === 'facematrix') ? 'block' : 'none';
         faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
         vignetteEl.style.display = m === 'face' ? 'block' : 'none';
         document.getElementById('sizeCtrl').style.display = m === 'facematrix' ? 'flex' : 'none';
