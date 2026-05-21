@@ -685,6 +685,10 @@
       // ------------------------------------------------------------------
       const faceCanvasEl = document.getElementById('face');
       let faceRenderer = null, faceScene = null, faceCamera = null;
+      // Matrix-face framing (independent of the smooth face): closer = zoomed in,
+      // lookY shifts the face up so the eyes flank the H1.
+      let mzZoom = 1.45, mzLookY = -0.30;
+      window.__setMz = (z, ly) => { mzZoom = z; mzLookY = ly; };
       let faceRoot = null, faceMesh = null;
       let faceReady = false, faceError = null;
       let faceCanvasW = 0, faceCanvasH = 0;
@@ -920,6 +924,8 @@
       function drawFace(now) {
         if (faceError || !faceRenderer) return;
         if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
+        faceCamera.position.set(0, 0, 2.8);     // normal framing
+        faceCamera.lookAt(0, 0, 0);
         updateFaceAnim(now);
         faceRenderer.render(faceScene, faceCamera);
       }
@@ -952,6 +958,8 @@
       function drawFaceMatrix(now) {
         if (faceError || !faceRenderer) return;
         if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
+        faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
+        faceCamera.lookAt(0, mzLookY, 0);
         updateFaceAnim(now);
         faceRenderer.render(faceScene, faceCamera);
 
@@ -1012,20 +1020,20 @@
               continue;
             }
             const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
-            // Slightly wider/earlier capture brings out mid shadows (nose sides).
-            let norm = (0.86 - lum) / 0.46;
+            // Lower lit threshold + softer curve reveal subtle mid shadows
+            // (e.g. the sides of the nose).
+            let norm = (0.84 - lum) / 0.44;
             if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
-            let bright = 0.10 + Math.pow(norm, 0.92) * 1.30;
-            const fx = (px / width - 0.5), fy = (py / height - 0.58);
-            let rf = 1 - (fx * fx) / (0.46 * 0.46) - (fy * fy) / (0.66 * 0.66);
-            if (rf < 0) rf = 0; else rf = Math.min(1, rf * 1.4);
+            let bright = 0.10 + Math.pow(norm, 0.86) * 1.30;
+            // Soft antialiased silhouette only (NO screen-space ellipse fade —
+            // that ellipse was the round halo behind the head).
             const aw = Math.min(1, a / 180);
-            bright *= aw * rf;
+            bright *= aw;
             if (bright > 1) bright = 1;
             if (bright < 0.085) continue;     // lighter than this → cached ambient shows
-            // Cap the darkest darks: medium shadows stay, but the silhouette
-            // never goes near-black (kills the dark halo around the head).
-            const colIdx = Math.min(lastColor - 3, Math.floor(bright * (lastColor + 1)));
+            // Cap the darkest at MID blue: keep the mid tones, but the deepest
+            // shadows top out at a medium blue instead of deep navy.
+            const colIdx = Math.min(7, Math.floor(bright * (lastColor + 1)));
             ctx.fillStyle = FACE_COLORS[colIdx];
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
           }
