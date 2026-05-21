@@ -1012,9 +1012,12 @@
                 pupil = true; // strongly-blue pixel = iris → blue eye
               } else {
                 const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
-                // Deeper shadows: lower exponent + higher gain push the dark
-                // areas to the near-black end of the wide ramp.
-                let face = 0.12 + Math.pow(1 - lum, 1.15) * 1.28;
+                // The 3D render is ethereal/light, so its shadows are subtle.
+                // Contrast-STRETCH that narrow range across the full ramp so
+                // the darkest areas hit deep navy (real depth).
+                let norm = (0.82 - lum) / 0.42;   // 0 at lit (~0.82) → 1 at shadow (~0.40)
+                if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
+                let face = 0.10 + Math.pow(norm, 0.92) * 1.30;
                 // Wide, soft edge fade — keeps crown + jaw detail, only the
                 // far edges dissolve into the ambient field.
                 const fx = (px / width - 0.5), fy = (py / height - 0.58);
