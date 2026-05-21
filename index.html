@@ -1019,6 +1019,7 @@
       let faceMatrixOff = null, faceMatrixCtx = null;
       // Cached faint background field (so we don't redraw ~80k chars/frame).
       let fmBg = null, fmBgCtx = null, fmBgRow = 0;
+      let fmFace = null, fmFaceCtx = null, fmFaceFrame = 0;  // cached ASCII-face layer
       function fmDrawBgBand(now, r0, r1) {
         const g = fmBgCtx;
         const lastColor = FACE_COLORS.length - 1;
@@ -1042,27 +1043,83 @@
 
       function drawFaceMatrix(now) {
         if (faceError || !faceRenderer) return;
-        syncFaceRenderer(FACE_RATIO_MATRIX);
-        faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
-        faceCamera.lookAt(0, mzLookY, 0);
-        updateFaceAnim(now);
-        faceRenderer.render(faceScene, faceCamera);
 
-        // Downsample the 3D render into the dense ASCII grid, then sample it.
-        if (!faceMatrixOff) {
-          faceMatrixOff = document.createElement('canvas');
-          faceMatrixCtx = faceMatrixOff.getContext('2d', { willReadFrequently: true });
+        // The ASCII face (WebGL render + readback + ~thousands of glyph fills)
+        // is the expensive part, but the face barely moves frame-to-frame — so
+        // regenerate that layer only every few frames (invisible) and just BLIT
+        // it the rest of the time. The streams on top stay at full framerate.
+        if (!fmFace) { fmFace = document.createElement('canvas'); fmFaceCtx = fmFace.getContext('2d'); }
+        let faceLayerNew = false;
+        if (fmFace.width !== canvas.width || fmFace.height !== canvas.height) {
+          fmFace.width = canvas.width; fmFace.height = canvas.height;
+          fmFaceCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          faceLayerNew = true;
         }
-        if (faceMatrixOff.width !== headCols || faceMatrixOff.height !== headRows) {
-          faceMatrixOff.width = Math.max(2, headCols);
-          faceMatrixOff.height = Math.max(2, headRows);
-        }
-        faceMatrixCtx.clearRect(0, 0, headCols, headRows);
-        faceMatrixCtx.drawImage(faceRenderer.domElement, 0, 0, headCols, headRows);
-        const data = faceMatrixCtx.getImageData(0, 0, headCols, headRows).data;
+        const FACE_EVERY = 4;                 // regenerate the face ~15fps
+        const regen = faceLayerNew || (fmFaceFrame % FACE_EVERY === 0);
+        fmFaceFrame++;
 
-        // ---- Cached background: redraw only a slice of rows per frame so it
-        // still moves but costs a fraction of a full redraw ----
+        if (regen) {
+          syncFaceRenderer(FACE_RATIO_MATRIX);
+          faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
+          faceCamera.lookAt(0, mzLookY, 0);
+          updateFaceAnim(now);
+          faceRenderer.render(faceScene, faceCamera);
+
+          // Downsample the 3D render into the dense ASCII grid, then sample it.
+          if (!faceMatrixOff) {
+            faceMatrixOff = document.createElement('canvas');
+            faceMatrixCtx = faceMatrixOff.getContext('2d', { willReadFrequently: true });
+          }
+          if (faceMatrixOff.width !== headCols || faceMatrixOff.height !== headRows) {
+            faceMatrixOff.width = Math.max(2, headCols);
+            faceMatrixOff.height = Math.max(2, headRows);
+          }
+          faceMatrixCtx.clearRect(0, 0, headCols, headRows);
+          faceMatrixCtx.drawImage(faceRenderer.domElement, 0, 0, headCols, headRows);
+          const data = faceMatrixCtx.getImageData(0, 0, headCols, headRows).data;
+
+          // Occasional char turnover for liveliness
+          const swapCount = Math.floor(headCells.length * 0.003);
+          for (let i = 0; i < swapCount; i++) {
+            const idx = (Math.random() * headCells.length) | 0;
+            if (headCells[idx]) headCells[idx].ch = pickChar();
+          }
+
+          // Redraw the cached face layer: transparent, only the face cells.
+          const fg = fmFaceCtx;
+          fg.clearRect(0, 0, width, height);
+          fg.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+          const lastColor = FACE_COLORS.length - 1;
+          for (let r = 0; r < headRows; r++) {
+            for (let c = 0; c < headCols; c++) {
+              const ai = (r * headCols + c) * 4;
+              const a = data[ai + 3];
+              if (a <= 14) continue;            // face only
+              const cell = headCells[r * headCols + c];
+              if (!cell) continue;
+              const R = data[ai], G = data[ai + 1], B = data[ai + 2];
+              if (B - R > 70 && B > 120) {       // blue eye
+                fg.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
+                fg.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+                continue;
+              }
+              const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
+              let norm = (0.84 - lum) / 0.44;
+              if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
+              let bright = 0.10 + Math.pow(norm, 0.86) * 1.30;
+              const aw = Math.min(1, a / 180);
+              bright *= aw;
+              if (bright > 1) bright = 1;
+              if (bright < 0.085) continue;
+              const colIdx = Math.min(7, Math.floor(bright * (lastColor + 1)));
+              fg.fillStyle = FACE_COLORS[colIdx];
+              fg.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+            }
+          }
+        }
+
+        // ---- Cached background: redraw only a slice of rows per frame ----
         if (!fmBg || fmBg.width !== canvas.width || fmBg.height !== canvas.height) {
           if (!fmBg) { fmBg = document.createElement('canvas'); fmBgCtx = fmBg.getContext('2d'); }
           fmBg.width = canvas.width; fmBg.height = canvas.height;
@@ -1075,55 +1132,9 @@
           fmBgRow += band; if (fmBgRow >= headRows) fmBgRow = 0;
         }
 
-        // Occasional char turnover for liveliness
-        const swapCount = Math.floor(headCells.length * 0.003);
-        for (let i = 0; i < swapCount; i++) {
-          const idx = (Math.random() * headCells.length) | 0;
-          if (headCells[idx]) headCells[idx].ch = pickChar();
-        }
-
-        // Blit the cached background (also clears last frame's face)
+        // Composite every frame: background, then the cached face, then streams.
         ctx.drawImage(fmBg, 0, 0, width, height);
-
-        // ---- Draw ONLY the face cells live on top (big saving) ----
-        ctx.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
-        const lastColor = FACE_COLORS.length - 1;
-        for (let r = 0; r < headRows; r++) {
-          const py = r * HEAD_CHAR_H + HEAD_CHAR_H * 0.5;
-          for (let c = 0; c < headCols; c++) {
-            const ai = (r * headCols + c) * 4;
-            const a = data[ai + 3];
-            if (a <= 14) continue;            // face only
-            const cell = headCells[r * headCols + c];
-            if (!cell) continue;
-            const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
-            const R = data[ai], G = data[ai + 1], B = data[ai + 2];
-
-            if (B - R > 70 && B > 120) {       // blue eye
-              ctx.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
-              ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
-              continue;
-            }
-            const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
-            // Lower lit threshold + softer curve reveal subtle mid shadows
-            // (e.g. the sides of the nose).
-            let norm = (0.84 - lum) / 0.44;
-            if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
-            let bright = 0.10 + Math.pow(norm, 0.86) * 1.30;
-            // Soft antialiased silhouette only (NO screen-space ellipse fade —
-            // that ellipse was the round halo behind the head).
-            const aw = Math.min(1, a / 180);
-            bright *= aw;
-            if (bright > 1) bright = 1;
-            if (bright < 0.085) continue;     // lighter than this → cached ambient shows
-            // Cap the darkest at MID blue: keep the mid tones, but the deepest
-            // shadows top out at a medium blue instead of deep navy.
-            const colIdx = Math.min(7, Math.floor(bright * (lastColor + 1)));
-            ctx.fillStyle = FACE_COLORS[colIdx];
-            ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
-          }
-        }
-        // Straight code streams flowing left to right, drawn IN FRONT of the face.
+        ctx.drawImage(fmFace, 0, 0, width, height);
         drawStreamsOverlay(now);
         ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
       }
