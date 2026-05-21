@@ -202,18 +202,20 @@
       // ---- Wide ramp for the matrix face: many steps from a barely-there
       // light tint → deep navy, for smooth shading + darker shadows ----
       const FACE_COLORS = [
-        'rgba(232, 240, 252, 1)',
-        'rgba(214, 227, 249, 1)',
-        'rgba(192, 212, 245, 1)',
-        'rgba(166, 192, 238, 1)',
-        'rgba(138, 169, 230, 1)',
-        'rgba(110, 146, 219, 1)',
-        'rgba(84, 122, 204, 1)',
-        'rgba(60, 97, 184, 1)',
-        'rgba(40, 73, 158, 1)',
-        'rgba(25, 52, 128, 1)',
-        'rgba(14, 35, 96, 1)',
-        'rgba(7, 21, 64, 1)'
+        'rgba(238, 244, 253, 1)',  // barely-there light (ambient bg)
+        'rgba(220, 231, 250, 1)',
+        'rgba(198, 216, 246, 1)',
+        'rgba(172, 196, 240, 1)',
+        'rgba(144, 173, 231, 1)',
+        'rgba(116, 150, 220, 1)',
+        'rgba(88, 124, 203, 1)',
+        'rgba(62, 99, 181, 1)',
+        'rgba(42, 76, 155, 1)',
+        'rgba(27, 55, 127, 1)',
+        'rgba(16, 38, 99, 1)',
+        'rgba(9, 24, 71, 1)',
+        'rgba(4, 14, 46, 1)',
+        'rgba(2, 7, 26, 1)'        // near-black navy (deepest shadow)
       ];
       // ---- Blue iris tones (around brand #2962ff) for the eyes ----
       const EYE_BLUES = [
@@ -988,53 +990,49 @@
 
         const lastColor = FACE_COLORS.length - 1;
 
-        // Pass 1 — a very faint code field EVERYWHERE so nothing is ever blank
-        // white (sparse so it stays light and cheap). Covers bg + lit face.
-        for (let r = 0; r < headRows; r += 2) {
-          for (let c = 0; c < headCols; c += 2) {
-            const cell = headCells[r * headCols + c];
-            if (!cell) continue;
-            const amb = 0.04 + 0.03 * (0.5 + 0.5 * Math.sin(cell.phase + now * 0.0009));
-            const ci = Math.min(lastColor, Math.floor(amb * (lastColor + 1)));
-            ctx.fillStyle = FACE_COLORS[ci];
-            ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
-          }
-        }
-
-        // Pass 2 — the face shading, full density on top.
+        // Single pass over EVERY cell: a solid, gap-free faint code field
+        // (very light gray-blue, gently moving) fills the whole screen, and
+        // the face shading overrides it where present — with deep dark shadows.
         for (let r = 0; r < headRows; r++) {
           const py = r * HEAD_CHAR_H + HEAD_CHAR_H * 0.5;
           for (let c = 0; c < headCols; c++) {
-            const ai = (r * headCols + c) * 4;
-            const a = data[ai + 3];
-            if (a <= 14) continue;
             const cell = headCells[r * headCols + c];
             if (!cell) continue;
             const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
-            const R = data[ai], G = data[ai + 1], B = data[ai + 2];
+            const ai = (r * headCols + c) * 4;
+            const a = data[ai + 3];
 
-            // Blue eyes: pupils render as strongly-blue pixels → draw them in
-            // brand-blue tones (with slight variation) instead of the ramp.
-            if (B - R > 70 && B > 120) {
-              ctx.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
-              ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
-              continue;
+            // Solid faint ambient everywhere — never blank white.
+            let bright = 0.045 + 0.025 * (0.5 + 0.5 * Math.sin(cell.phase + now * 0.0009));
+            let pupil = false;
+
+            if (a > 14) {
+              const R = data[ai], G = data[ai + 1], B = data[ai + 2];
+              if (B - R > 70 && B > 120) {
+                pupil = true; // strongly-blue pixel = iris → blue eye
+              } else {
+                const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
+                // Deeper shadows: lower exponent + higher gain push the dark
+                // areas to the near-black end of the wide ramp.
+                let face = 0.12 + Math.pow(1 - lum, 1.15) * 1.28;
+                // Wide, soft edge fade — keeps crown + jaw detail, only the
+                // far edges dissolve into the ambient field.
+                const fx = (px / width - 0.5), fy = (py / height - 0.58);
+                let rf = 1 - (fx * fx) / (0.46 * 0.46) - (fy * fy) / (0.66 * 0.66);
+                if (rf < 0) rf = 0; else rf = Math.min(1, rf * 1.4);
+                const aw = Math.min(1, a / 180);
+                face *= aw * rf;
+                if (face > bright) bright = face;
+              }
             }
 
-            const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
-            // Base keeps lit areas as light-blue code (never white); power curve
-            // deepens shadows for contrast across the wide ramp.
-            let bright = 0.13 + Math.pow(1 - lum, 1.35) * 0.92;
-            const fx = (px / width - 0.5), fy = (py / height - 0.58);
-            let rf = 1 - (fx * fx) / (0.40 * 0.40) - (fy * fy) / (0.40 * 0.40);
-            if (rf < 0) rf = 0;
-            const aw = Math.min(1, a / 180);
-            bright *= aw * rf;
-
-            if (bright > 1) bright = 1;
-            if (bright < 0.06) continue; // (sparse ambient already underneath)
-            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
-            ctx.fillStyle = FACE_COLORS[colIdx];
+            if (pupil) {
+              ctx.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
+            } else {
+              if (bright > 1) bright = 1;
+              const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+              ctx.fillStyle = FACE_COLORS[colIdx];
+            }
             ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
           }
         }
