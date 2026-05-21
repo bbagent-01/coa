@@ -799,7 +799,8 @@
               // head rotates IN PLACE (symmetric left/right) instead of orbiting.
               facePivot = new THREE.Group();
               facePivot.add(faceRoot);
-              facePivot.position.y += 0.12; // eyes upper third, mouth visible
+              facePivot.position.y -= 0.25; // lower the face so the eyes sit at the Get Demo button level
+              window.__facePivot = facePivot; // temp handle for live position tuning
               faceScene.add(facePivot);
               facePivot.updateMatrixWorld(true);
               // Pupils: flat-shaded light spheres at each eyeball center,
@@ -1134,13 +1135,15 @@
             const dist = Math.sqrt(dx * dx + dy * dy);
             const ang = Math.atan2(dy, dx);
 
-            // Two spiral waves: a broad primary band + a finer overlay. Phase
-            // moves INWARD over time (constant-phase contours contract).
-            const w1 = Math.sin(dist * 0.013 - ang * 2.0 + now * 0.0016);
-            const w2 = Math.sin(dist * 0.027 - ang * 3.0 + now * 0.0023);
-            const wave = 0.5 + 0.36 * w1 + 0.14 * w2;          // ~0..1
-            const conv = Math.max(0, 1 - dist / (maxR * 1.15)); // brighter toward center
-            let bright = 0.05 + wave * (0.10 + conv * 0.32);
+            // Nearly-straight (slightly bent) radial lines, with brightness
+            // pulses flowing INWARD along them — linear inflow toward the
+            // center, not a spinning spiral.
+            const arms = 16;
+            const bend = 0.0011;                                 // small = straighter lines
+            const spoke = 0.5 + 0.5 * Math.sin((ang + dist * bend) * arms);
+            const inflow = 0.5 + 0.5 * Math.sin(dist * 0.020 + now * 0.0030); // pulses move inward
+            const conv = Math.max(0, 1 - dist / (maxR * 1.15));  // brighter toward center
+            let bright = 0.045 + spoke * inflow * (0.14 + conv * 0.34);
             bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
 
             // Calm char turnover (slow) so it doesn't look jittery
