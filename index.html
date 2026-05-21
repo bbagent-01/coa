@@ -1248,7 +1248,7 @@
         }
         const maxR = Math.hypot(width, height) * 0.5;
         const lastColor = COLORS.length - 1;
-        const rot = now * 0.00008;   // slow overall rotation of the spiral field
+        const rot = -now * 0.00008;   // slow overall rotation of the spiral field (reversed)
 
         // Continuous SPIRAL-WAVE field flowing inward — broad waves of data
         // sweeping toward the center (rather than tiny discrete beads). The
