@@ -852,8 +852,11 @@
               grd.addColorStop(0.82, '#1c46c0');
               grd.addColorStop(1, '#12357f');     // limbus (darker iris edge)
               pg.fillStyle = grd; pg.fillRect(0, 0, 64, 64);
-              pg.beginPath(); pg.arc(32, 32, 8, 0, Math.PI * 2); pg.fillStyle = '#0b1b46'; pg.fill(); // pupil
-              pg.beginPath(); pg.arc(27, 26, 3.4, 0, Math.PI * 2); pg.fillStyle = 'rgba(226,238,255,0.95)'; pg.fill(); // catchlight
+              // Pupil: a small CIRCLE. The sphere stretches the texture ~2x
+              // horizontally, so draw a vertical ellipse (rx≈ry/2) so it reads
+              // round. Only a little darker than the iris (not a near-black hole).
+              pg.beginPath(); pg.ellipse(32, 32, 3, 6, 0, 0, Math.PI * 2); pg.fillStyle = '#1c3f9e'; pg.fill();
+              pg.beginPath(); pg.ellipse(29, 27, 1.5, 2.6, 0, 0, Math.PI * 2); pg.fillStyle = 'rgba(226,238,255,0.95)'; pg.fill(); // catchlight
               const ptex = new THREE.CanvasTexture(pcv);
               ptex.colorSpace = THREE.SRGBColorSpace;
               pupilMat = new THREE.MeshBasicMaterial({ map: ptex, transparent: true, opacity: 0.95 });
