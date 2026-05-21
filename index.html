@@ -916,6 +916,23 @@
         faceCanvasW = width; faceCanvasH = height;
       }
 
+      // Face render resolution. The smooth face (02) renders at full retina res;
+      // the matrix (04) downsamples to a tiny ASCII grid, so 1x is invisible
+      // there but ~4x cheaper on retina — big perf win, no visual change.
+      const FACE_RATIO_FULL = Math.min(2, window.devicePixelRatio || 1);
+      const FACE_RATIO_MATRIX = 1;
+      let faceRatio = -1;
+      function syncFaceRenderer(ratio) {
+        if (!faceRenderer) return;
+        if (faceRatio === ratio && faceCanvasW === width && faceCanvasH === height) return;
+        faceRatio = ratio;
+        faceRenderer.setPixelRatio(ratio);
+        faceRenderer.setSize(width, height, false);
+        faceCamera.aspect = width / height;
+        faceCamera.updateProjectionMatrix();
+        faceCanvasW = width; faceCanvasH = height;
+      }
+
       // Shared face animation (gaze, eyes, blink, expression, pupils) — used by
       // both the smooth render (02) and the matrix-ASCII render (04).
       function updateFaceAnim(now) {
@@ -991,7 +1008,7 @@
 
       function drawFace(now) {
         if (faceError || !faceRenderer) return;
-        if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
+        syncFaceRenderer(FACE_RATIO_FULL);
         faceCamera.position.set(0, 0, 2.8);     // normal framing
         faceCamera.lookAt(0, 0, 0);
         updateFaceAnim(now);
@@ -1025,7 +1042,7 @@
 
       function drawFaceMatrix(now) {
         if (faceError || !faceRenderer) return;
-        if (faceCanvasW !== width || faceCanvasH !== height) resizeFace();
+        syncFaceRenderer(FACE_RATIO_MATRIX);
         faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
         faceCamera.lookAt(0, mzLookY, 0);
         updateFaceAnim(now);
