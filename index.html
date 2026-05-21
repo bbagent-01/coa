@@ -22,10 +22,10 @@
        match the WebGL scene background. */
     #vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
-      background: radial-gradient(ellipse 33% 50% at 50% 44%,
-        rgba(238,243,251,0) 40%,
-        rgba(238,243,251,0.85) 66%,
-        rgba(238,243,251,1) 80%);
+      background: radial-gradient(ellipse 27% 52% at 50% 43%,
+        rgba(238,243,251,0) 22%,
+        rgba(238,243,251,0.95) 50%,
+        rgba(238,243,251,1) 72%);
     }
     .label {
       position: fixed; left: 20px; bottom: 18px;
@@ -720,7 +720,13 @@
           if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
             const dict = faceMesh.morphTargetDictionary;
             const infl = faceMesh.morphTargetInfluences;
-            const setM = (name, v) => { if (dict[name] !== undefined) infl[dict[name]] = v; };
+            // facecap morph names are prefixed (e.g. "blendShape1.eyeLookOutLeft"),
+            // so match by suffix rather than exact name.
+            const setM = (suffix, v) => {
+              for (const key in dict) {
+                if (key === suffix || key.endsWith(suffix)) infl[dict[key]] = v;
+              }
+            };
 
             // ---- Eyes follow the cursor (faster than head, still gentle) ----
             eyeLook.h += (nx - eyeLook.h) * 0.06;
