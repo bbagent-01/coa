@@ -32,6 +32,44 @@
       border-radius: 50%; background: #c0ccde;
       pointer-events: none; transform: translate(-50%, -50%);
     }
+    /* Toggleable Coalesce hero overlay (centered over any mode) */
+    #hero {
+      position: fixed; inset: 0; z-index: 2;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 6vh 24px; pointer-events: none;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(248,250,253,0.55), rgba(248,250,253,0) 72%);
+    }
+    #hero.hidden { display: none; }
+    #hero h1 {
+      font-size: clamp(38px, 6.4vw, 86px); font-weight: 800; letter-spacing: -0.02em;
+      line-height: 1.04; color: #0a2540; max-width: 13ch; margin: 0;
+    }
+    #hero p {
+      font-size: clamp(15px, 1.9vw, 21px); color: #3a4a63; line-height: 1.45;
+      max-width: 42ch; margin: 22px 0 0;
+    }
+    #hero .cta {
+      pointer-events: auto; margin-top: 30px; display: inline-block;
+      background: #2962ff; color: #fff; font-weight: 700; font-size: 16px;
+      padding: 13px 30px; border-radius: 999px; text-decoration: none;
+      transition: background 0.15s ease;
+    }
+    #hero .cta:hover { background: #1f4fe0; }
+    #hero .ratings { display: flex; gap: 18px; margin-top: 34px; flex-wrap: wrap; justify-content: center; }
+    #hero .rating {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      border: 1px solid #e2e7f2; border-radius: 12px; padding: 12px 18px;
+    }
+    #hero .rating .stars { color: #f4b400; letter-spacing: 1px; font-size: 14px; }
+    #hero .rating .score { color: #0a2540; font-weight: 700; font-size: 14px; }
+    #hero .rating .src { color: #6b7a90; font-size: 11px; }
+    #hero .logos {
+      margin-top: 34px; max-width: 70ch; color: #9aa7ba;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; line-height: 2;
+    }
+    #heroToggle.active { color: #2547d9; }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -86,7 +124,26 @@
     <button data-mode="cursor" class="active">01 · cursor</button>
     <button data-mode="face">02 · face</button>
     <button data-mode="coalesce">03 · coalesce</button>
+    <span class="sep">/</span>
+    <button id="heroToggle">content</button>
   </nav>
+
+  <div id="hero">
+    <h1>Use AI without breaking your data</h1>
+    <p>Coalesce is the data operating layer that builds control into your pipelines, so analytics and AI can scale without chaos or risk.</p>
+    <a class="cta" href="https://coalesce.io/" target="_blank" rel="noopener">Get Demo</a>
+    <div class="ratings">
+      <div class="rating">
+        <span class="stars">★★★★★</span>
+        <span><span class="score">4.8 / 5</span> &nbsp;<span class="src">G2 · Feb 1, 2026</span></span>
+      </div>
+      <div class="rating">
+        <span class="stars">★★★★★</span>
+        <span><span class="score">4.9 / 5</span> &nbsp;<span class="src">Gartner Peer Insights · Feb 1, 2026</span></span>
+      </div>
+    </div>
+    <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
+  </div>
   <div class="label" id="label">coa · cursor</div>
 
   <script type="module">
@@ -797,13 +854,23 @@
           // Small head range, slow follow — most of the tracking is the eyes.
           const targetYaw = nx * 0.28 + idleYaw;       // turn more to each side
           const targetPitch = ny * 0.15 + idlePitch;
-          gazeYaw += (targetYaw - gazeYaw) * 0.018;     // slow follow
-          gazePitch += (targetPitch - gazePitch) * 0.018;
+          // Ease toward target but CLAMP the per-frame change so the head never
+          // jumps or moves fast — even when the cursor re-enters far away.
+          const MAX_STEP = 0.0024;                      // radians/frame ceiling
+          let dYaw = (targetYaw - gazeYaw) * 0.04;
+          let dPitch = (targetPitch - gazePitch) * 0.04;
+          if (dYaw > MAX_STEP) dYaw = MAX_STEP; else if (dYaw < -MAX_STEP) dYaw = -MAX_STEP;
+          if (dPitch > MAX_STEP) dPitch = MAX_STEP; else if (dPitch < -MAX_STEP) dPitch = -MAX_STEP;
+          gazeYaw += dYaw;
+          gazePitch += dPitch;
           if (facePivot) { facePivot.rotation.y = gazeYaw; facePivot.rotation.x = gazePitch; }
 
-          // Smoothed eye-look value (drives the pupil overlay offset)
-          eyeLook.h += (nx - eyeLook.h) * 0.08;
-          eyeLook.v += (ny - eyeLook.v) * 0.08;
+          // Smoothed eye-look (drives the pupils) — clamped so the eyes glide
+          // and never snap when the cursor jumps or re-enters.
+          let deh = (nx - eyeLook.h) * 0.05; if (deh > 0.012) deh = 0.012; else if (deh < -0.012) deh = -0.012;
+          let dev = (ny - eyeLook.v) * 0.05; if (dev > 0.012) dev = 0.012; else if (dev < -0.012) dev = -0.012;
+          eyeLook.h += deh;
+          eyeLook.v += dev;
 
           // ---- Idle blink: infrequent + slow (closes facecap's eyelids) ----
           if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
@@ -1024,9 +1091,20 @@
       // Nav + mode switching
       // ------------------------------------------------------------------
       const labelEl = document.getElementById('label');
-      const navButtons = document.querySelectorAll('.nav > button');
+      const navButtons = document.querySelectorAll('.nav button[data-mode]');
       const asciiCanvasEl = document.getElementById('ascii');
       const vignetteEl = document.getElementById('vignette');
+      // Toggleable Coalesce hero overlay
+      const heroEl = document.getElementById('hero');
+      const heroToggle = document.getElementById('heroToggle');
+      let heroOn = true;
+      function setHero(on) {
+        heroOn = on;
+        heroEl.classList.toggle('hidden', !on);
+        heroToggle.classList.toggle('active', on);
+      }
+      heroToggle.addEventListener('click', () => setHero(!heroOn));
+      setHero(true);
       function setMode(m) {
         mode = m;
         navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
