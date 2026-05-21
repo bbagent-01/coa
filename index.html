@@ -685,10 +685,9 @@
       // ------------------------------------------------------------------
       const faceCanvasEl = document.getElementById('face');
       let faceRenderer = null, faceScene = null, faceCamera = null;
-      // Matrix-face framing (independent of the smooth face): closer = zoomed in,
+      // Matrix-face framing (independent of the smooth face): closer = ~2x zoom,
       // lookY shifts the face up so the eyes flank the H1.
-      let mzZoom = 1.45, mzLookY = -0.30;
-      window.__setMz = (z, ly) => { mzZoom = z; mzLookY = ly; };
+      const mzZoom = 1.4, mzLookY = -0.22;
       let faceRoot = null, faceMesh = null;
       let faceReady = false, faceError = null;
       let faceCanvasW = 0, faceCanvasH = 0;
