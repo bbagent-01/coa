@@ -134,15 +134,6 @@
   <div id="vignette"></div>
   <div id="pupilL" class="pupil"></div>
   <div id="pupilR" class="pupil"></div>
-  <nav class="nav">
-    <button data-mode="cursor" class="active">01 · cursor</button>
-    <button data-mode="face">02 · face</button>
-    <button data-mode="spiralin">03 · spiral in</button>
-    <button data-mode="facematrix">04 · face matrix</button>
-    <span class="sep">/</span>
-    <button id="heroToggle">content</button>
-  </nav>
-
   <div id="hero">
     <div class="topnav"><div class="inner">
       <a href="https://coalesce.io/" target="_blank" rel="noopener"><img class="logo" src="https://coalesce.io/wp-content/themes/mt-coalesce/assets/dist/img/svg/coalesce-logo-blue.svg" alt="Coalesce"></a>
@@ -167,12 +158,6 @@
       <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/gartner-feb.png" alt="Gartner Peer Insights: 4.9 out of 5 stars, as of Feb 1, 2026">
     </div>
     <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
-  </div>
-  <div class="label" id="label">coa · cursor</div>
-  <div id="sizeCtrl">
-    <span>head size</span>
-    <input type="range" id="sizeSlider" min="1" max="3.2" step="0.05" value="1.45">
-    <span id="sizeVal">1.45</span>
   </div>
 
   <script type="module">
@@ -1414,59 +1399,17 @@
       }
 
       function draw(now) {
-        if (mode === 'cursor') drawCursor(now);
-        else if (mode === 'spiralin') drawCoalesce(now, false);
-        else if (mode === 'facematrix') drawFaceMatrix(now);
-        else drawFace(now);
+        drawFaceMatrix(now);
         requestAnimationFrame(draw);
       }
 
-      // ------------------------------------------------------------------
-      // Nav + mode switching
-      // ------------------------------------------------------------------
-      const labelEl = document.getElementById('label');
-      const navButtons = document.querySelectorAll('.nav button[data-mode]');
-      const asciiCanvasEl = document.getElementById('ascii');
-      const vignetteEl = document.getElementById('vignette');
-      // Toggleable Coalesce hero overlay
-      const heroEl = document.getElementById('hero');
-      const heroToggle = document.getElementById('heroToggle');
-      let heroOn = true;
-      function setHero(on) {
-        heroOn = on;
-        heroEl.classList.toggle('hidden', !on);
-        heroToggle.classList.toggle('active', on);
-      }
-      heroToggle.addEventListener('click', () => setHero(!heroOn));
-      setHero(true);
-
-      // Head-size slider (matrix face). Bigger = camera closer; lookY auto-
-      // tracks so the eyes stay flanking the H1 at any size.
-      const sizeCtrl = document.getElementById('sizeCtrl');
-      const sizeSlider = document.getElementById('sizeSlider');
-      const sizeVal = document.getElementById('sizeVal');
-      function applyHeadSize() {
-        const size = parseFloat(sizeSlider.value);
-        mzZoom = 2.8 / size;
-        mzLookY = -0.126 - 0.0674 * mzZoom;
-        if (sizeVal) sizeVal.textContent = size.toFixed(2);
-      }
-      sizeSlider.addEventListener('input', applyHeadSize);
-      applyHeadSize();
-      function setMode(m) {
-        mode = m;
-        navButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-        labelEl.textContent = 'coa · ' + (m === 'spiralin' ? 'spiral in' : m === 'facematrix' ? 'face matrix' : m);
-        document.body.style.cursor = (m === 'face' || m === 'facematrix') ? 'default' : 'crosshair';
-        // cursor + spirals + facematrix draw on the 2D ASCII canvas; smooth face uses WebGL
-        asciiCanvasEl.style.display = (m === 'cursor' || m === 'spiralin' || m === 'facematrix') ? 'block' : 'none';
-        faceCanvasEl.style.display = m === 'face' ? 'block' : 'none';
-        vignetteEl.style.display = m === 'face' ? 'block' : 'none';
-        document.getElementById('sizeCtrl').style.display = m === 'facematrix' ? 'flex' : 'none';
-        if (m === 'face' || m === 'facematrix') resizeFace();
-      }
-      navButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
-
+      // Locked to the face-matrix hero (production page — no dev nav / slider).
+      // Coalesce content overlay always on; head size baked at 1.45.
+      document.getElementById('hero').classList.remove('hidden');
+      document.body.style.cursor = 'default';
+      mzZoom = 2.8 / 1.45;
+      mzLookY = -0.126 - 0.0674 * mzZoom;
+      resizeFace();
       requestAnimationFrame(draw);
     }
   </script>
