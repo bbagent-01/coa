@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>coa</title>
+  <style>
+    :root { --bg: #ffffff; --ink: #2a3b6b; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--ink);
+      cursor: crosshair;
+    }
+    canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+    #face { display: none; }
+    /* Radial fade: face center is clear, edges dissolve into the flat
+       background (hides ears + removes the hard silhouette). Color MUST
+       match the WebGL scene background. */
+    #vignette {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
+      background: radial-gradient(ellipse 40% 54% at 50% 60%,
+        rgba(238,243,251,0) 38%,
+        rgba(238,243,251,0.95) 64%,
+        rgba(238,243,251,1) 86%);
+    }
+    .pupil {
+      position: fixed; z-index: 2; display: none;
+      border-radius: 50%; background: #c0ccde;
+      pointer-events: none; transform: translate(-50%, -50%);
+    }
+    /* Toggleable Coalesce hero overlay (centered over any mode) */
+    #hero {
+      position: fixed; inset: 0; z-index: 2;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 6vh 24px; pointer-events: none;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(248,250,253,0.55), rgba(248,250,253,0) 72%);
+    }
+    #hero.hidden { display: none; }
+    #hero h1 {
+      font-size: clamp(38px, 6.4vw, 86px); font-weight: 800; letter-spacing: -0.02em;
+      line-height: 1.04; color: #0a2540; max-width: 13ch; margin: 0;
+    }
+    #hero p {
+      font-size: clamp(15px, 1.9vw, 21px); color: #3a4a63; line-height: 1.45;
+      max-width: 42ch; margin: 22px 0 0;
+    }
+    #hero .cta {
+      pointer-events: auto; margin-top: 30px; display: inline-block;
+      background: #2962ff; color: #fff; font-weight: 700; font-size: 16px;
+      padding: 13px 30px; border-radius: 999px; text-decoration: none;
+      transition: background 0.15s ease;
+    }
+    #hero .cta:hover { background: #1f4fe0; }
+    #hero .ratings { display: flex; gap: 24px; margin-top: 36px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    #hero .ratings .badge { width: 300px; max-width: 42vw; height: auto; display: block; pointer-events: none; }
+    /* Coalesce-style marketing top nav (shown in the content overlay) */
+    #hero .topnav { position: absolute; top: 0; left: 0; right: 0; padding: 48px 40px 0; }
+    #hero .topnav .inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    #hero .topnav .logo { height: 30px; width: auto; pointer-events: auto; }
+    #hero .topnav .links { display: flex; gap: 30px; align-items: center; }
+    #hero .topnav .links a { pointer-events: auto; color: #00274b; text-decoration: none; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 5px; }
+    #hero .topnav .links a:hover { color: #2962ff; }
+    #hero .topnav .right { display: flex; align-items: center; gap: 20px; }
+    #hero .topnav .book { pointer-events: auto; background: #2962ff; color: #fff; font-weight: 600; font-size: 15px; padding: 11px 22px; border-radius: 999px; text-decoration: none; transition: background 0.15s ease; white-space: nowrap; }
+    #hero .topnav .book:hover { background: #1f4fe0; }
+    #hero .topnav .search { pointer-events: auto; color: #00274b; display: inline-flex; align-items: center; cursor: pointer; }
+    @media (max-width: 960px) { #hero .topnav .links { display: none; } #hero .topnav { padding-top: 44px; } }
+    #hero .logos {
+      margin-top: 34px; max-width: 70ch; color: #9aa7ba;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; line-height: 2;
+    }
+    #heroToggle.active { color: #2547d9; }
+    #sizeCtrl {
+      position: fixed; left: 20px; top: 58px; z-index: 3; display: none;
+      align-items: center; gap: 10px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b8ad0;
+      background: rgba(255,255,255,0.88); border: 1px solid #e2e7f2; border-radius: 8px;
+      padding: 7px 12px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    }
+    #sizeCtrl input[type="range"] { width: 130px; accent-color: #2962ff; cursor: pointer; }
+    #sizeVal { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #2962ff; min-width: 34px; text-align: right; }
+    .label {
+      position: fixed; left: 20px; bottom: 18px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #6b8ad0; user-select: none; z-index: 2;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid #e2e7f2;
+      border-radius: 8px;
+      padding: 6px 12px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    .nav {
+      position: fixed; left: 20px; top: 18px; z-index: 3;
+      display: inline-flex; gap: 14px; align-items: center;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid #e2e7f2;
+      border-radius: 8px;
+      padding: 8px 14px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    .nav button {
+      background: transparent; border: none; padding: 0;
+      font: inherit; letter-spacing: inherit; text-transform: inherit;
+      color: #aebbd9; cursor: pointer;
+      transition: color 0.15s ease;
+    }
+    .nav button:hover { color: #6b8ad0; }
+    .nav button.active { color: #2547d9; }
+    .nav .sep { color: #d6dcec; }
+    .nav .model-picker { display: none; gap: 12px; align-items: center; }
+    .nav .model-picker button { font-size: 10px; opacity: 0.85; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="ascii"></canvas>
+  <canvas id="face"></canvas>
+  <div id="vignette"></div>
+  <div id="pupilL" class="pupil"></div>
+  <div id="pupilR" class="pupil"></div>
+  <div id="hero">
+    <div class="topnav"><div class="inner">
+      <a href="https://coalesce.io/" target="_blank" rel="noopener"><img class="logo" src="https://coalesce.io/wp-content/themes/mt-coalesce/assets/dist/img/svg/coalesce-logo-blue.svg" alt="Coalesce"></a>
+      <div class="links">
+        <a href="#">Product</a>
+        <a href="#">Solutions</a>
+        <a href="#">Resources</a>
+        <a href="#">Customers</a>
+        <a href="#">Company</a>
+        <a href="#">Docs <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+      </div>
+      <div class="right">
+        <span class="search" title="Search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+        <a class="book" href="https://coalesce.io/" target="_blank" rel="noopener">Book a Demo</a>
+      </div>
+    </div></div>
+    <h1>Humans and agents delivering data, together</h1>
+    <p>Develop, deploy, govern, and observe every pipeline in one operating layer built for analytics and AI.</p>
+    <a class="cta" href="https://coalesce.io/" target="_blank" rel="noopener">Get Demo</a>
+    <div class="ratings">
+      <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/g2-feb.png" alt="G2: 4.8 out of 5 stars, as of Feb 1, 2026">
+      <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/gartner-feb.png" alt="Gartner Peer Insights: 4.9 out of 5 stars, as of Feb 1, 2026">
+    </div>
+    <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    {
+      const canvas = document.getElementById('ascii');
+      const ctx = canvas.getContext('2d');
+
+      // ---- Character pool: SQL keywords, code symbols, hex ----
+      const SQL_TOKENS = [
+        'SELECT','FROM','WHERE','JOIN','LEFT','RIGHT','INNER','OUTER','ON','AS',
+        'GROUP','ORDER','BY','LIMIT','OFFSET','HAVING','UNION','DISTINCT',
+        'INSERT','UPDATE','DELETE','CREATE','TABLE','VIEW','INDEX','WITH',
+        'AND','OR','NOT','NULL','IS','IN','LIKE','BETWEEN','CASE','WHEN','THEN','ELSE','END',
+        'COUNT','SUM','AVG','MIN','MAX','CAST','COALESCE','EXISTS'
+      ];
+      const SYMBOLS = '{}[]()<>;,.=+-*/_:|&%@#$!?\\"\'`~^';
+      const HEX = '0123456789abcdef';
+      const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+
+      // Build a flat char pool weighted toward symbols + hex (Matrix-y feel),
+      // and a list of multi-char SQL snippets we'll occasionally stamp across cells.
+      const CHAR_POOL = [];
+      for (let i = 0; i < 3; i++) for (const c of SYMBOLS) CHAR_POOL.push(c);
+      for (let i = 0; i < 2; i++) for (const c of HEX) CHAR_POOL.push(c);
+      for (let i = 0; i < 1; i++) for (const c of LETTERS) CHAR_POOL.push(c);
+      const SNIPPETS = [
+        'SELECT * FROM','WHERE id =','JOIN ON','GROUP BY','ORDER BY DESC',
+        'COUNT(*)','IS NULL','LIMIT 100','CREATE TABLE','INSERT INTO',
+        'NOT NULL','LEFT JOIN','UNION ALL','CASE WHEN','COALESCE(','AS coa',
+        'WITH cte AS','SUM(amount)','AVG(price)','HAVING COUNT'
+      ];
+
+      function pickChar() {
+        return CHAR_POOL[(Math.random() * CHAR_POOL.length) | 0];
+      }
+
+      // ---- Color ramp: light powder → mid blue (no dark / no navy) ----
+      // Lower indices = paler. Highest still feels soft.
+      const COLORS = [
+        'rgba(225, 234, 250, 1)',
+        'rgba(206, 220, 246, 1)',
+        'rgba(180, 201, 240, 1)',
+        'rgba(151, 179, 232, 1)',
+        'rgba(124, 158, 222, 1)',
+        'rgba(102, 140, 212, 1)',
+        'rgba(86, 124, 200, 1)'
+      ];
+
+      // ---- Wide ramp for the matrix face: many steps from a barely-there
+      // light tint → deep navy, for smooth shading + darker shadows ----
+      const FACE_COLORS = [
+        'rgba(238, 244, 253, 1)',  // barely-there light (ambient bg)
+        'rgba(220, 231, 250, 1)',
+        'rgba(198, 216, 246, 1)',
+        'rgba(172, 196, 240, 1)',
+        'rgba(144, 173, 231, 1)',
+        'rgba(116, 150, 220, 1)',
+        'rgba(88, 124, 203, 1)',
+        'rgba(62, 99, 181, 1)',
+        'rgba(42, 76, 155, 1)',
+        'rgba(27, 55, 127, 1)',
+        'rgba(16, 38, 99, 1)',
+        'rgba(9, 24, 71, 1)',
+        'rgba(4, 14, 46, 1)',
+        'rgba(2, 7, 26, 1)'        // near-black navy (deepest shadow)
+      ];
+      // ---- Blue iris tones (around brand #2962ff) for the eyes ----
+      const EYE_BLUES = [
+        'rgba(41, 98, 255, 1)',
+        'rgba(74, 126, 255, 1)',
+        'rgba(30, 80, 226, 1)',
+        'rgba(96, 150, 255, 1)',
+        'rgba(52, 110, 244, 1)'
+      ];
+
+      // ---- Sparkle accents: tints + shades of brand bright blue #2962ff,
+      // sprinkled sparsely in the mouse cluster as glints ----
+      const SPARKLE = [
+        'rgba(41, 98, 255, 1)',    // #2962ff base
+        'rgba(92, 138, 255, 1)',   // tint
+        'rgba(140, 176, 255, 1)',  // lighter tint
+        'rgba(28, 72, 200, 1)',    // shade
+        'rgba(64, 112, 240, 1)',   // mid
+        'rgba(64, 196, 255, 1)',   // bright cyan-blue glint
+        'rgba(120, 224, 255, 1)',  // light cyan dazzle
+        'rgba(0, 174, 255, 1)'     // vivid azure
+      ];
+
+      // ---- Flame ramp for the mouse blob: bright/light hot core → deeper,
+      // fainter blue at the edges (the cursor reads like a flame/glow) ----
+      const FLAME = [
+        'rgba(140, 232, 255,',   // bright light CYAN-blue core
+        'rgba(96, 188, 255,',    // cyan → blue
+        'rgba(68, 142, 252,',    // blue
+        'rgba(48, 106, 236,',    // brand-ish blue
+        'rgba(32, 80, 210,',     // deeper blue
+        'rgba(20, 58, 176,'      // deep blue edge
+      ];
+
+      // ---- Stream ramp: muted darker-blue head fading to light gray. No cyan,
+      // no bright/saturated blue — keeps the streams understated. ----
+      const STREAM_COLORS = [
+        'rgba(70, 96, 150,',     // darker muted blue (head)
+        'rgba(98, 122, 168,',    // muted blue
+        'rgba(130, 150, 184,',   // blue-gray
+        'rgba(162, 176, 198,',   // light blue-gray
+        'rgba(190, 198, 212,',   // light gray
+        'rgba(214, 218, 226,'    // lighter gray (tail tip)
+      ];
+      // Very front of each stream: bright "Get Demo" blue, fading quickly into
+      // the muted ramp above over the first few cells.
+      const STREAM_HEAD = [
+        'rgba(41, 98, 255,',     // #2962ff — Get Demo bright blue (leading edge)
+        'rgba(55, 92, 205,',     // fading
+        'rgba(64, 94, 174,'      // nearly the muted darker blue
+      ];
+
+      // ---- Grid: tight 9pt characters for cursor mode ----
+      const CHAR_W = 6;
+      const CHAR_H = 9;
+      const FONT_SIZE = 9;
+      // ---- Denser grid for head mode (much finer detail) ----
+      const HEAD_CHAR_W = 4;
+      const HEAD_CHAR_H = 6;
+      const HEAD_FONT_SIZE = 6;
+      let headCols = 0, headRows = 0;
+      let headCells = null;
+
+      let dpr = Math.max(1, window.devicePixelRatio || 1);
+      let width = 0, height = 0, cols = 0, rows = 0;
+      let cells = [];                          // per-cell state
+      let mouseX = -9999, mouseY = -9999;
+      let prevMouseX = -9999, prevMouseY = -9999;
+      let targetX = -9999, targetY = -9999;
+      let trail = [];                          // history of mouse points
+      const TRAIL_MS = 2000;                   // tail lifetime (shorter — fades faster)
+      const TRAIL_MAX = 80;                    // shorter tail; still gap-free
+      let scx = -1, scy = -1;                  // spiral-follow center
+      const RADIUS = 75;                       // trail blob radius (half the previous diameter)
+      const RADIUS2 = RADIUS * RADIUS;
+      const HEAD_RADIUS = 75;                  // amorphous wobble field (half diameter)
+      const HEAD_RADIUS2 = HEAD_RADIUS * HEAD_RADIUS;
+      let bbMinC = 0, bbMaxC = 0, bbMinR = 0, bbMaxR = 0; // trail bbox (shared)
+      let trailFrame = 0;
+
+      function buildCells() {
+        cells = new Array(cols * rows);
+        for (let i = 0; i < cells.length; i++) {
+          cells[i] = {
+            ch: pickChar(),
+            phase: Math.random() * Math.PI * 2,
+            swap: 0.004 + Math.random() * 0.018, // baseline char-swap probability per frame
+            stick: 0                              // snippet stickiness (frames remaining before allowed to swap)
+          };
+        }
+        // Sprinkle a handful of SQL snippets across the grid for flavor.
+        const targetSnippets = Math.max(8, Math.floor((cols * rows) / 4000));
+        for (let s = 0; s < targetSnippets; s++) stampSnippet();
+      }
+
+      function stampSnippet() {
+        const snip = SNIPPETS[(Math.random() * SNIPPETS.length) | 0];
+        const startX = Math.floor(Math.random() * Math.max(1, cols - snip.length));
+        const y = Math.floor(Math.random() * rows);
+        for (let i = 0; i < snip.length; i++) {
+          const idx = y * cols + (startX + i);
+          if (!cells[idx]) continue;
+          cells[idx].ch = snip[i];
+          cells[idx].stick = 240 + Math.floor(Math.random() * 240); // hold for a few seconds
+        }
+      }
+
+      function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        dpr = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        cols = Math.ceil(width / CHAR_W) + 1;
+        rows = Math.ceil(height / CHAR_H) + 1;
+        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textBaseline = 'top';
+        buildCells();
+        // Head grid (denser) — rebuilt when canvas resizes
+        headCols = Math.ceil(width / HEAD_CHAR_W) + 1;
+        headRows = Math.ceil(height / HEAD_CHAR_H) + 1;
+        headCells = new Array(headCols * headRows);
+        for (let i = 0; i < headCells.length; i++) {
+          headCells[i] = {
+            ch: pickChar(),
+            phase: Math.random() * Math.PI * 2,
+            swap: 0.005 + Math.random() * 0.020
+          };
+        }
+      }
+
+      function onMove(e) {
+        const t = e.touches ? e.touches[0] : e;
+        targetX = t.clientX;
+        targetY = t.clientY;
+      }
+      function onLeave() {
+        targetX = -9999;
+        targetY = -9999;
+      }
+
+      window.addEventListener('resize', resize);
+      window.addEventListener('mousemove', onMove, { passive: true });
+      window.addEventListener('touchmove', onMove, { passive: true });
+      window.addEventListener('mouseleave', onLeave);
+      window.addEventListener('blur', onLeave);
+
+      resize();
+
+      let lastSnippetStamp = 0;
+      let frame = 0;
+      let mode = 'cursor';
+
+      // ----- Shared mouse-blob (used by cursor mode AND spiral-in) -----------
+      function updateMouseTrail(now) {
+        if (mouseX === -9999) { mouseX = targetX; mouseY = targetY; prevMouseX = mouseX; prevMouseY = mouseY; }
+        else if (targetX > -1000) {
+          prevMouseX = mouseX; prevMouseY = mouseY;
+          mouseX += (targetX - mouseX) * 0.16;
+          mouseY += (targetY - mouseY) * 0.16;
+        }
+        // Push a point EVERY frame so the tail stays continuous (no gaps/skips
+        // when moving fast). Minimal jitter keeps the blob smooth.
+        if (targetX > -1000) {
+          const mdx = mouseX - prevMouseX, mdy = mouseY - prevMouseY;
+          const moveDist = Math.sqrt(mdx * mdx + mdy * mdy);
+          const jitter = Math.max(0, 8 - moveDist) * 0.35;
+          trail.push({ x: mouseX + (Math.random() - 0.5) * jitter, y: mouseY + (Math.random() - 0.5) * jitter, t: now });
+        }
+        while (trail.length && (now - trail[0].t > TRAIL_MS || trail.length > TRAIL_MAX)) trail.shift();
+
+        let maxStretch = 1;
+        for (let i = 0; i < trail.length; i++) {
+          const p = trail[i];
+          const prev = i > 0 ? trail[i - 1] : p;
+          const vx = p.x - prev.x, vy = p.y - prev.y;
+          const sp = Math.sqrt(vx * vx + vy * vy);
+          p.sp = sp;
+          if (sp > 0.6) {
+            if (p.axisJit === undefined) p.axisJit = (Math.random() - 0.5) * 0.6;
+            const ca = Math.cos(p.axisJit), sa = Math.sin(p.axisJit);
+            const uxn = vx / sp, uyn = vy / sp;
+            p.ux = uxn * ca - uyn * sa;
+            p.uy = uxn * sa + uyn * ca;
+            p.stretch = 1 + Math.min(0.45, sp * 0.025);
+          } else { p.ux = 0; p.uy = 0; p.stretch = 1; }
+          if (p.wob === undefined) p.wob = Math.random() * Math.PI * 2;
+          if (p.stretch > maxStretch) maxStretch = p.stretch;
+        }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < trail.length; i++) {
+          const p = trail[i];
+          if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+        }
+        const bbPad = Math.max(RADIUS * maxStretch, HEAD_RADIUS * 1.6) + 40;
+        bbMinC = Math.max(0, Math.floor((minX - bbPad) / CHAR_W));
+        bbMaxC = Math.min(cols, Math.ceil((maxX + bbPad) / CHAR_W));
+        bbMinR = Math.max(0, Math.floor((minY - bbPad) / CHAR_H));
+        bbMaxR = Math.min(rows, Math.ceil((maxY + bbPad) / CHAR_H));
+      }
+
+      // Returns the blob/cluster intensity (0..1) at a cell.
+      // smooth = true → clean ROUND blob (no wobble/stretch/noise); used by the
+      // spiral so the cursor reads as a solid smooth blob.
+      function clusterAt(px, py, r, c, now, smooth) {
+        let trailBoost = 0;
+        if (r >= bbMinR && r < bbMaxR && c >= bbMinC && c < bbMaxC) {
+          for (let i = 0; i < trail.length; i++) {
+            const p = trail[i];
+            const dx = px - p.x, dy = py - p.y;
+            let warpedD2;
+            if (!smooth && p.sp > 0.6) {
+              const along = dx * p.ux + dy * p.uy;
+              const perp = -dx * p.uy + dy * p.ux;
+              const a = along / p.stretch;
+              warpedD2 = a * a + perp * perp;
+            } else { warpedD2 = dx * dx + dy * dy; }
+            if (warpedD2 > RADIUS2 * 1.3) continue;
+            const d = Math.sqrt(warpedD2);
+            let wRad = RADIUS;
+            if (!smooth) {
+              const localAng = Math.atan2(dy, dx);
+              wRad = RADIUS * (1 + 0.22 * Math.sin(localAng * 3 + now * 0.0028 + p.wob)
+                                + 0.14 * Math.sin(localAng * 5 - now * 0.0019 + p.wob * 1.7));
+            }
+            if (d > wRad) continue;
+            let f = 1 - d / wRad; f = f * f;
+            const age = (now - p.t) / TRAIL_MS;
+            const ageW = (1 - age) * (1 - age);
+            trailBoost += f * ageW;
+          }
+          const hdx = px - mouseX, hdy = py - mouseY;
+          const hd2 = hdx * hdx + hdy * hdy;
+          if (hd2 < HEAD_RADIUS2 * 1.6) {
+            let wr = HEAD_RADIUS;
+            if (!smooth) {
+              const ang2 = Math.atan2(hdy, hdx);
+              wr = HEAD_RADIUS * (1 + 0.42 * Math.sin(ang2 * 3 + now * 0.0026)
+                                   + 0.26 * Math.sin(ang2 * 5 - now * 0.0019)
+                                   + 0.16 * Math.sin(ang2 * 2 + now * 0.0015));
+            }
+            const hd = Math.sqrt(hd2);
+            if (hd < wr) { let hf = 1 - hd / wr; hf = hf * hf; trailBoost += hf * 0.9; }
+          }
+        }
+        if (!smooth) {
+          const organic = Math.sin(px * 0.018 + now * 0.0011) * Math.sin(py * 0.022 - now * 0.0008) * 0.5 + 0.5;
+          trailBoost *= 0.55 + organic * 0.9;
+        }
+        return 1 - Math.exp(-trailBoost * 1.4);
+      }
+
+      // Flame color for a blob cell. t = cluster intensity (1 at the hot center,
+      // → 0 at the edge). Bright/light core, deeper + fainter toward the edge,
+      // with sparse bright dazzle glints near the core.
+      function flameStyle(t, px, py, now, phase) {
+        if (t > 1) t = 1; else if (t < 0) t = 0;
+        if (t > 0.45) {
+          const tw = Math.sin(px * 0.40 + now * 0.0075)
+                   + Math.sin(py * 0.34 - now * 0.0061)
+                   + Math.sin((px + py) * 0.22 + now * 0.0090);
+          if (tw > 1.3) return SPARKLE[(((phase * 997) | 0) % SPARKLE.length + SPARKLE.length) % SPARKLE.length];
+        }
+        const fi = Math.min(FLAME.length - 1, (((1 - t) * FLAME.length) | 0));
+        const alpha = Math.min(1, 0.22 + t * 0.85);
+        return FLAME[fi] + alpha.toFixed(3) + ')';
+      }
+
+      function drawCursor(now) {
+        frame++;
+        updateMouseTrail(now);
+
+        // White wipe
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // Shimmer: swap a small fraction of cell chars each frame
+        // (cells affected by mouse swap faster — see inner loop)
+        // Periodically refresh a SQL snippet so something readable cycles in.
+        if (now - lastSnippetStamp > 1800) {
+          stampSnippet();
+          lastSnippetStamp = now;
+        }
+
+        const lastColor = COLORS.length - 1;
+        const cx = width * 0.5;
+        const cy = height * 0.5;
+        const swirlT = now * 0.00015;
+
+        // Walk every cell. Threshold prevents drawing invisible glyphs.
+        // For each cell compute brightness from:
+        //   1) background swirl (very subtle, spiral-arm pattern)
+        //   2) idle shimmer (per-cell sine phase)
+        //   3) mouse trail (sum of past positions with age decay)
+        for (let r = 0; r < rows; r++) {
+          const py = r * CHAR_H + CHAR_H * 0.5;
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            const cell = cells[idx];
+            if (!cell) continue;
+            const px = c * CHAR_W + CHAR_W * 0.5;
+
+            // --- background swirl ---
+            // angle/dist from screen center, rotated slowly
+            const ax = px - cx;
+            const ay = py - cy;
+            const ang = Math.atan2(ay, ax);
+            const dC = Math.sqrt(ax * ax + ay * ay);
+            // Spiral arms: 3 arms, rotating
+            const swirl = 0.5 + 0.5 * Math.sin(ang * 3 + dC * 0.012 - swirlT * 4);
+            // Fade the swirl toward edges so it doesn't overpower
+            const swirlFalloff = Math.max(0, 1 - dC / (Math.max(width, height) * 0.75));
+            let bright = swirl * swirlFalloff * 0.18;
+
+            // --- idle shimmer ---
+            bright += 0.04 + 0.05 * Math.sin(cell.phase + now * 0.0011);
+
+            // --- mouse blob/cluster (amorphous for cursor mode) ---
+            const cluster = clusterAt(px, py, r, c, now, false);
+            bright += cluster * 0.95;
+
+            // Cluster cells swap chars faster
+            const swapProb = cell.swap + cluster * 0.18;
+            if (cell.stick > 0) {
+              cell.stick--;
+            } else if (Math.random() < swapProb) {
+              cell.ch = pickChar();
+            }
+
+            if (bright < 0.08) continue; // below visibility threshold
+
+            // Mouse blob renders as a FLAME — bright/light core fading to a
+            // deeper, fainter blue at the edges. Background stays the light ramp.
+            let style;
+            if (cluster > 0.05) {
+              style = flameStyle(cluster, px, py, now, cell.phase);
+            } else {
+              const colIdx = Math.min(4, Math.floor(bright * (lastColor + 1)));
+              style = COLORS[colIdx];
+            }
+            ctx.fillStyle = style;
+            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+          }
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // MODE 2 — 3D ASCII head (real 3D head mesh, sampled into ASCII grid)
+      // ------------------------------------------------------------------
+      // Renders LeePerrySmith.glb (a real human-head scan that ships with
+      // three.js) into a tiny offscreen canvas sized to the ASCII grid.
+      // Each cell reads the corresponding pixel's luminance, then we draw
+      // the matching ASCII char + blue shade at that grid position.
+
+      let headReady = false;
+      let headError = null;
+      let headGroup = null;
+      let renderer3d = null;
+      let scene3d = null;
+      let camera3d = null;
+      let offCanvas = null;   // 2D canvas we drawImage the WebGL output into
+      let offCtx2d = null;
+      let off3dW = 0, off3dH = 0;
+
+      // fit  = target world-space size of the model's largest dimension
+      //        (camera at z=2.6 with 26° FOV shows ~1.2 vertical units, so
+      //        fit=2.0 means head overflows top+bottom → face fills frame)
+      // yOff = world-space vertical offset AFTER scaling (negative = down,
+      //        used to crop neck and put eyes near vertical center)
+      const MODELS = {
+        perry:     { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/LeePerrySmith/LeePerrySmith.glb',
+                     fit: 2.1, yaw0: 0,        xOff: 0,    yOff: -0.45 },
+        nefertiti: { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/Nefertiti/Nefertiti.glb',
+                     fit: 1.8, yaw0: 0,        xOff: 0,    yOff: -0.25 },
+        facecap:   { url: 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb',
+                     fit: 1.7, yaw0: Math.PI,  xOff: 0,    yOff: 0 }
+      };
+      let currentModel = 'perry';
+
+      function initHead3D() {
+        try {
+          renderer3d = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: false,
+            preserveDrawingBuffer: true
+          });
+          renderer3d.setClearColor(0x000000, 0);
+
+          scene3d = new THREE.Scene();
+
+          camera3d = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+          camera3d.position.set(0, 0, 2.6);
+          camera3d.lookAt(0, 0, 0);
+
+          // Frontal-ish key light so center features (nose, lips, brow) catch
+          // the brightest band. Side fill from opposite side. Back rim
+          // outlines the silhouette.
+          scene3d.add(new THREE.AmbientLight(0xffffff, 0.12));
+          const key = new THREE.DirectionalLight(0xffffff, 1.4);
+          key.position.set(-0.5, 0.85, 1.5);
+          scene3d.add(key);
+          const fill = new THREE.DirectionalLight(0xffffff, 0.22);
+          fill.position.set(0.9, -0.1, 0.7);
+          scene3d.add(fill);
+          const rim = new THREE.DirectionalLight(0xffffff, 0.65);
+          rim.position.set(0.3, 0.7, -1.2);
+          scene3d.add(rim);
+
+          offCanvas = document.createElement('canvas');
+          offCtx2d = offCanvas.getContext('2d', { willReadFrequently: true });
+
+          headGroup = new THREE.Group();
+          scene3d.add(headGroup);
+
+          loadHead(currentModel);
+        } catch (e) {
+          console.error(e);
+          headError = 'webgl unavailable';
+        }
+      }
+
+      // Supersample factor — render at 2× the ASCII grid so each cell's
+      // luminance is averaged over a 2x2 pixel block (cleaner features).
+      const SS = 2;
+
+      // Build a 3-step gradient texture for toon shading. Hard luminance
+      // bands let ASCII pick distinct chars per band → features actually read.
+      let toonGradient = null;
+      function buildToonGradient() {
+        if (toonGradient) return toonGradient;
+        const data = new Uint8Array([55, 165, 255]);
+        const tex = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        tex.needsUpdate = true;
+        toonGradient = tex;
+        return tex;
+      }
+
+      function loadHead(modelKey) {
+        if (!MODELS[modelKey] || !headGroup) return;
+        currentModel = modelKey;
+        headReady = false;
+        headError = null;
+        // Dispose previously-loaded mesh resources
+        while (headGroup.children.length > 0) {
+          const child = headGroup.children[0];
+          child.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+              if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
+              else o.material.dispose();
+            }
+          });
+          headGroup.remove(child);
+        }
+        const cfg = MODELS[modelKey];
+        const loader = new GLTFLoader();
+        loader.load(
+          cfg.url,
+          (gltf) => {
+            const root = gltf.scene;
+            // Keep full geometry. Decimation made features unrecognizable.
+            // Smooth-shaded toon material + dense head grid gives the best
+            // readability we can get at this resolution.
+            root.traverse((obj) => {
+              if (obj.isMesh) {
+                obj.material = new THREE.MeshToonMaterial({
+                  color: 0xffffff,
+                  gradientMap: buildToonGradient()
+                });
+                obj.frustumCulled = false;
+              }
+            });
+            // Recenter, scale to fit, then apply offsets in WORLD units so
+            // we can precisely crop (e.g. push the neck below the bottom).
+            const box = new THREE.Box3().setFromObject(root);
+            const center = box.getCenter(new THREE.Vector3());
+            root.position.sub(center);
+            const size = box.getSize(new THREE.Vector3());
+            const fit = (cfg.fit || 1.3) / Math.max(size.x, size.y, size.z);
+            root.scale.setScalar(fit);
+            root.position.x += cfg.xOff || 0;
+            root.position.y += cfg.yOff || 0;
+            root.rotation.y = cfg.yaw0 || 0;
+            headGroup.add(root);
+            headReady = true;
+          },
+          undefined,
+          (err) => {
+            console.error('head load failed', err);
+            headError = 'failed to load model: ' + modelKey;
+          }
+        );
+      }
+
+      function resize3D() {
+        if (!renderer3d) return;
+        // Use the DENSE head grid for offscreen rendering — gives 3-4× more
+        // pixels per facial feature than the cursor-mode grid.
+        off3dW = Math.max(2, headCols * SS);
+        off3dH = Math.max(2, headRows * SS);
+        renderer3d.setSize(off3dW, off3dH, false);
+        offCanvas.width = off3dW;
+        offCanvas.height = off3dH;
+        camera3d.aspect = off3dW / off3dH;
+        camera3d.updateProjectionMatrix();
+      }
+
+      // ------------------------------------------------------------------
+      // MODE 2 — real 3D face (facecap, rendered normally — no ASCII)
+      // ------------------------------------------------------------------
+      const faceCanvasEl = document.getElementById('face');
+      let faceRenderer = null, faceScene = null, faceCamera = null;
+      // Matrix-face framing (independent of the smooth face): closer = bigger,
+      // and lookY auto-tracks zoom so the eyes stay flanking the H1.
+      let mzZoom = 1.4, mzLookY = -0.22;
+      let faceRoot = null, faceMesh = null;
+      let faceReady = false, faceError = null;
+      let faceCanvasW = 0, faceCanvasH = 0;
+      let gazeYaw = 0, gazePitch = 0;
+      let eyeLook = { h: 0, v: 0 };
+      let facePivot = null;                  // centered pivot so the head spins in place
+      let eyeL = null, eyeR = null;          // facecap eyeball meshes (hidden)
+      let eyeLCenter = null, eyeRCenter = null; // eyeball centers, in faceRoot-local space
+      let eyeRadiusLocal = 0.1;              // eyeball radius in faceRoot-local units
+      let pupilMeshL = null, pupilMeshR = null; // 3D pupils, cropped by eyelids via depth
+      let pupilMat = null;
+      let curBlink = 0;
+      // Bounding-sphere center + radius of a mesh, in faceRoot-local coordinates.
+      function eyeSphereLocal(mesh) {
+        mesh.geometry.computeBoundingSphere();
+        const bs = mesh.geometry.boundingSphere;
+        const center = bs.center.clone();
+        const surf = bs.center.clone(); surf.x += bs.radius;
+        mesh.localToWorld(center);
+        mesh.localToWorld(surf);
+        faceRoot.worldToLocal(center);
+        faceRoot.worldToLocal(surf);
+        return { center, radius: center.distanceTo(surf) };
+      }
+
+      function initFace() {
+        try {
+          faceRenderer = new THREE.WebGLRenderer({ canvas: faceCanvasEl, antialias: true, preserveDrawingBuffer: true });
+          faceRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+          faceRenderer.setSize(width, height, false);
+          faceRenderer.outputColorSpace = THREE.SRGBColorSpace;
+          faceRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+          faceRenderer.toneMappingExposure = 1.25; // brighter → ethereal, luminous
+          faceCanvasW = width; faceCanvasH = height;
+
+          faceScene = new THREE.Scene();
+          faceScene.background = new THREE.Color(0xeef3fb); // light brand tint
+
+          // Soft studio environment → realistic skin shading, no external files
+          const pmrem = new THREE.PMREMGenerator(faceRenderer);
+          faceScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.02).texture;
+
+          faceCamera = new THREE.PerspectiveCamera(24, width / height, 0.1, 100);
+          faceCamera.position.set(0, 0, 2.8);
+
+          // Key from higher up → the brow ridge casts a clearer overhang shadow
+          const key = new THREE.DirectionalLight(0xffffff, 2.1);
+          key.position.set(-0.8, 1.95, 1.7);
+          faceScene.add(key);
+          const rim = new THREE.DirectionalLight(0xd6e4ff, 0.85);
+          rim.position.set(1.6, 0.4, -1.4);
+          faceScene.add(rim);
+          // Soft up-light from below-front lifts the dark under-nose / nostril shadow
+          const uplight = new THREE.DirectionalLight(0xffffff, 0.6);
+          uplight.position.set(0, -1.4, 1.8);
+          faceScene.add(uplight);
+
+          // facecap.glb: KTX2-compressed textures + Meshopt-compressed geometry
+          const ktx2 = new KTX2Loader()
+            .setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/')
+            .detectSupport(faceRenderer);
+          const loader = new GLTFLoader()
+            .setKTX2Loader(ktx2)
+            .setMeshoptDecoder(MeshoptDecoder);
+          loader.load(
+            'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/models/gltf/facecap.glb',
+            (gltf) => {
+              faceRoot = gltf.scene;
+              // Find the mesh that carries blink/expression morph targets
+              faceRoot.traverse((o) => { if (o.isMesh && o.morphTargetInfluences) faceMesh = o; });
+              if (!faceMesh) faceRoot.traverse((o) => { if (o.isMesh && !faceMesh) faceMesh = o; });
+              // facecap eyeballs are separate meshes (mesh_0/mesh_1) that the
+              // face morphs don't drive — hide them (their geometry showed as
+              // "rings"); we render solid-circle pupils as a 2D overlay instead.
+              faceRoot.traverse((o) => {
+                if (o.name === 'mesh_0') eyeL = o;
+                if (o.name === 'mesh_1') eyeR = o;
+              });
+              if (eyeL) eyeL.visible = false;
+              if (eyeR) eyeR.visible = false;
+              // Ethereal, androgynous material — soft cool-white matte with a
+              // faint inner glow. Replaces the GLB's skin texture.
+              faceRoot.traverse((o) => {
+                if (o.isMesh) {
+                  o.material = new THREE.MeshStandardMaterial({
+                    color: 0xe4eaf3,
+                    roughness: 0.74,
+                    metalness: 0.0,
+                    emissive: new THREE.Color(0x33508a),
+                    emissiveIntensity: 0.07,
+                    envMapIntensity: 1.2
+                  });
+                }
+              });
+              // Center + scale to frame the face
+              // Scale FIRST, then center on the scaled bounding box (correct
+              // order — centering before scaling threw the framing off).
+              const size0 = new THREE.Box3().setFromObject(faceRoot).getSize(new THREE.Vector3());
+              const fit = 2.2 / Math.max(size0.x, size0.y, size0.z); // larger than the screen
+              faceRoot.scale.setScalar(fit);
+              faceRoot.updateMatrixWorld(true);
+              const cbox = new THREE.Box3().setFromObject(faceRoot);
+              const center = cbox.getCenter(new THREE.Vector3());
+              faceRoot.position.sub(center); // center the model on its own origin
+              // Wrap in a pivot group whose origin is the face center, so the
+              // head rotates IN PLACE (symmetric left/right) instead of orbiting.
+              facePivot = new THREE.Group();
+              facePivot.add(faceRoot);
+              facePivot.position.y -= 0.13; // lower the face so the eyes sit at the Get Demo button level
+              faceScene.add(facePivot);
+              facePivot.updateMatrixWorld(true);
+              // Pupils: flat-shaded light spheres at each eyeball center,
+              // children of faceRoot. MeshBasic = flat color (no iris ring),
+              // depthTest lets the eyelids (face mesh) crop them to the opening.
+              // Blue iris with structure: gradient + darker limbus ring + a
+              // dark pupil + a small catchlight highlight (more eye detail).
+              const pcv = document.createElement('canvas'); pcv.width = pcv.height = 64;
+              const pg = pcv.getContext('2d');
+              const grd = pg.createRadialGradient(28, 26, 3, 32, 32, 33);
+              grd.addColorStop(0, '#7aa0ff');
+              grd.addColorStop(0.45, '#2962ff');
+              grd.addColorStop(0.82, '#1c46c0');
+              grd.addColorStop(1, '#12357f');     // limbus (darker iris edge)
+              pg.fillStyle = grd; pg.fillRect(0, 0, 64, 64);
+              // Pupil: a small CIRCLE. The sphere stretches the texture ~2x
+              // horizontally, so draw a vertical ellipse (rx≈ry/2) so it reads
+              // round. Only a little darker than the iris (not a near-black hole).
+              pg.beginPath(); pg.ellipse(32, 32, 6, 12, 0, 0, Math.PI * 2); pg.fillStyle = '#1c3f9e'; pg.fill();
+              pg.beginPath(); pg.ellipse(29, 27, 1.5, 2.6, 0, 0, Math.PI * 2); pg.fillStyle = 'rgba(226,238,255,0.95)'; pg.fill(); // catchlight
+              const ptex = new THREE.CanvasTexture(pcv);
+              ptex.colorSpace = THREE.SRGBColorSpace;
+              pupilMat = new THREE.MeshBasicMaterial({ map: ptex, transparent: true, opacity: 0.95 });
+              if (eyeL) {
+                const s = eyeSphereLocal(eyeL);
+                eyeLCenter = s.center; eyeRadiusLocal = s.radius;
+                pupilMeshL = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
+                pupilMeshL.position.copy(s.center);
+                pupilMeshL.rotation.y = -Math.PI / 2; // face the iris detail toward the camera (was mapped to the side)
+                faceRoot.add(pupilMeshL);
+              }
+              if (eyeR) {
+                const s = eyeSphereLocal(eyeR);
+                eyeRCenter = s.center;
+                pupilMeshR = new THREE.Mesh(new THREE.SphereGeometry(s.radius * 0.35, 20, 20), pupilMat);
+                pupilMeshR.position.copy(s.center);
+                pupilMeshR.rotation.y = -Math.PI / 2; // face the iris detail toward the camera (was mapped to the side)
+                faceRoot.add(pupilMeshR);
+              }
+              faceReady = true;
+            },
+            undefined,
+            (err) => { console.error('face load failed', err); faceError = 'failed to load face'; }
+          );
+        } catch (e) {
+          console.error(e);
+          faceError = 'webgl unavailable';
+        }
+      }
+
+      function resizeFace() {
+        if (!faceRenderer) return;
+        faceRenderer.setSize(width, height, false);
+        faceCamera.aspect = width / height;
+        faceCamera.updateProjectionMatrix();
+        faceCanvasW = width; faceCanvasH = height;
+      }
+
+      // Face render resolution. The smooth face (02) renders at full retina res;
+      // the matrix (04) downsamples to a tiny ASCII grid, so 1x is invisible
+      // there but ~4x cheaper on retina — big perf win, no visual change.
+      const FACE_RATIO_FULL = Math.min(2, window.devicePixelRatio || 1);
+      const FACE_RATIO_MATRIX = 1;
+      let faceRatio = -1;
+      function syncFaceRenderer(ratio) {
+        if (!faceRenderer) return;
+        if (faceRatio === ratio && faceCanvasW === width && faceCanvasH === height) return;
+        faceRatio = ratio;
+        faceRenderer.setPixelRatio(ratio);
+        faceRenderer.setSize(width, height, false);
+        faceCamera.aspect = width / height;
+        faceCamera.updateProjectionMatrix();
+        faceCanvasW = width; faceCanvasH = height;
+      }
+
+      // Shared face animation (gaze, eyes, blink, expression, pupils) — used by
+      // both the smooth render (02) and the matrix-ASCII render (04).
+      function updateFaceAnim(now) {
+        if (faceReady && faceRoot) {
+          // Mouse → gaze target (-1..1). Centered at rest.
+          let nx = 0, ny = 0;
+          if (targetX > -1000) {
+            nx = (targetX / width) * 2 - 1;
+            ny = (targetY / height) * 2 - 1;
+          }
+          // Very subtle, slow idle drift; symmetric around center.
+          const idleYaw = Math.sin(now * 0.00016) * 0.022;
+          const idlePitch = Math.sin(now * 0.00021 + 1.1) * 0.012;
+          // Small head range, slow follow — most of the tracking is the eyes.
+          const targetYaw = nx * 0.28 + idleYaw;       // turn more to each side
+          const targetPitch = ny * 0.15 + idlePitch;
+          // Ease toward target but CLAMP the per-frame change so the head never
+          // jumps or moves fast — even when the cursor re-enters far away.
+          const MAX_STEP = 0.0024;                      // radians/frame ceiling
+          let dYaw = (targetYaw - gazeYaw) * 0.04;
+          let dPitch = (targetPitch - gazePitch) * 0.04;
+          if (dYaw > MAX_STEP) dYaw = MAX_STEP; else if (dYaw < -MAX_STEP) dYaw = -MAX_STEP;
+          if (dPitch > MAX_STEP) dPitch = MAX_STEP; else if (dPitch < -MAX_STEP) dPitch = -MAX_STEP;
+          gazeYaw += dYaw;
+          gazePitch += dPitch;
+          if (facePivot) { facePivot.rotation.y = gazeYaw; facePivot.rotation.x = gazePitch; }
+
+          // Smoothed eye-look (drives the pupils) — clamped so the eyes glide
+          // and never snap when the cursor jumps or re-enters.
+          let deh = (nx - eyeLook.h) * 0.05; if (deh > 0.012) deh = 0.012; else if (deh < -0.012) deh = -0.012;
+          let dev = (ny - eyeLook.v) * 0.05; if (dev > 0.012) dev = 0.012; else if (dev < -0.012) dev = -0.012;
+          eyeLook.h += deh;
+          eyeLook.v += dev;
+
+          // ---- Idle blink: infrequent + slow (closes facecap's eyelids) ----
+          if (faceMesh && faceMesh.morphTargetInfluences && faceMesh.morphTargetDictionary) {
+            const dict = faceMesh.morphTargetDictionary;
+            const infl = faceMesh.morphTargetInfluences;
+            const cycle = 18000;        // ~18s between blinks (rare)
+            const blinkWin = 0.06;      // ~600ms blink duration
+            const tt = (now % cycle) / cycle;
+            let blink = 0;
+            if (tt > (1 - blinkWin)) blink = Math.sin(((tt - (1 - blinkWin)) / blinkWin) * Math.PI);
+            curBlink = blink;
+            for (const name in dict) {
+              if (name.toLowerCase().includes('blink')) infl[dict[name]] = blink;
+            }
+            // Subtle warm / knowing expression — mostly in the eyes (a "smize"):
+            // gentle squint + raised cheeks + faint smile + one arched brow.
+            const setExpr = (n, v) => { if (dict[n] !== undefined) infl[dict[n]] = v; };
+            setExpr('eyeSquint_L', 0.18);  setExpr('eyeSquint_R', 0.18);
+            setExpr('cheekSquint_L', 0.13); setExpr('cheekSquint_R', 0.13);
+            setExpr('mouthSmile_L', 0.10);  setExpr('mouthSmile_R', 0.10);
+            setExpr('browOuterUp_R', 0.08); // faint knowing arch on one side
+          }
+
+          // ---- 3D pupils track the cursor; eyelids crop them via depth ----
+          if (pupilMeshL && pupilMeshR) {
+            const k = eyeRadiusLocal * 0.34;     // travel across the eye
+            const down = eyeRadiusLocal * 0.08;  // sit slightly low in the opening
+            // Push each pupil OUTWARD (away from the nose) so at rest the eyes
+            // look straight out and never cross. Both shift the same way for h,
+            // keeping the gaze parallel.
+            const outB = eyeRadiusLocal * 0.22;
+            const sgnL = eyeLCenter.x < 0 ? -1 : 1;
+            const sgnR = eyeRCenter.x < 0 ? -1 : 1;
+            pupilMeshL.position.set(eyeLCenter.x + sgnL * outB + eyeLook.h * k, eyeLCenter.y - eyeLook.v * k - down, eyeLCenter.z);
+            pupilMeshR.position.set(eyeRCenter.x + sgnR * outB + eyeLook.h * k, eyeRCenter.y - eyeLook.v * k - down, eyeRCenter.z);
+            if (pupilMat) pupilMat.opacity = 0.95 * (1 - curBlink);
+          }
+        }
+      }
+
+      function drawFace(now) {
+        if (faceError || !faceRenderer) return;
+        syncFaceRenderer(FACE_RATIO_FULL);
+        faceCamera.position.set(0, 0, 2.8);     // normal framing
+        faceCamera.lookAt(0, 0, 0);
+        updateFaceAnim(now);
+        faceRenderer.render(faceScene, faceCamera);
+      }
+
+      // ---- MODE 4: same face animation, composed in matrix ASCII style ----
+      let faceMatrixOff = null, faceMatrixCtx = null;
+      // Cached faint background field (so we don't redraw ~80k chars/frame).
+      let fmBg = null, fmBgCtx = null, fmBgRow = 0;
+      let fmFace = null, fmFaceCtx = null, fmFaceFrame = 0;  // cached ASCII-face layer
+      function fmDrawBgBand(now, r0, r1) {
+        const g = fmBgCtx;
+        const lastColor = FACE_COLORS.length - 1;
+        const y0 = r0 * HEAD_CHAR_H;
+        const y1 = Math.min(height, r1 * HEAD_CHAR_H);
+        g.clearRect(0, y0, width, y1 - y0);
+        g.fillStyle = '#ffffff';
+        g.fillRect(0, y0, width, y1 - y0);
+        g.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+        for (let r = r0; r < r1 && r < headRows; r++) {
+          for (let c = 0; c < headCols; c++) {
+            const cell = headCells[r * headCols + c];
+            if (!cell) continue;
+            const amb = 0.045 + 0.025 * (0.5 + 0.5 * Math.sin(cell.phase + now * 0.0009));
+            const ci = Math.min(lastColor, Math.floor(amb * (lastColor + 1)));
+            g.fillStyle = FACE_COLORS[ci];
+            g.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+          }
+        }
+      }
+
+      function drawFaceMatrix(now) {
+        if (faceError || !faceRenderer) return;
+
+        // The ASCII face (WebGL render + readback + ~thousands of glyph fills)
+        // is the expensive part, but the face barely moves frame-to-frame — so
+        // regenerate that layer only every few frames (invisible) and just BLIT
+        // it the rest of the time. The streams on top stay at full framerate.
+        if (!fmFace) { fmFace = document.createElement('canvas'); fmFaceCtx = fmFace.getContext('2d'); }
+        let faceLayerNew = false;
+        if (fmFace.width !== canvas.width || fmFace.height !== canvas.height) {
+          fmFace.width = canvas.width; fmFace.height = canvas.height;
+          fmFaceCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          faceLayerNew = true;
+        }
+        const FACE_EVERY = 4;                 // regenerate the face ~15fps
+        const regen = faceLayerNew || (fmFaceFrame % FACE_EVERY === 0);
+        fmFaceFrame++;
+
+        if (regen) {
+          syncFaceRenderer(FACE_RATIO_MATRIX);
+          faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
+          faceCamera.lookAt(0, mzLookY, 0);
+          updateFaceAnim(now);
+          faceRenderer.render(faceScene, faceCamera);
+
+          // Downsample the 3D render into the dense ASCII grid, then sample it.
+          if (!faceMatrixOff) {
+            faceMatrixOff = document.createElement('canvas');
+            faceMatrixCtx = faceMatrixOff.getContext('2d', { willReadFrequently: true });
+          }
+          if (faceMatrixOff.width !== headCols || faceMatrixOff.height !== headRows) {
+            faceMatrixOff.width = Math.max(2, headCols);
+            faceMatrixOff.height = Math.max(2, headRows);
+          }
+          faceMatrixCtx.clearRect(0, 0, headCols, headRows);
+          faceMatrixCtx.drawImage(faceRenderer.domElement, 0, 0, headCols, headRows);
+          const data = faceMatrixCtx.getImageData(0, 0, headCols, headRows).data;
+
+          // Occasional char turnover for liveliness
+          const swapCount = Math.floor(headCells.length * 0.003);
+          for (let i = 0; i < swapCount; i++) {
+            const idx = (Math.random() * headCells.length) | 0;
+            if (headCells[idx]) headCells[idx].ch = pickChar();
+          }
+
+          // Redraw the cached face layer: transparent, only the face cells.
+          const fg = fmFaceCtx;
+          fg.clearRect(0, 0, width, height);
+          fg.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+          const lastColor = FACE_COLORS.length - 1;
+          for (let r = 0; r < headRows; r++) {
+            for (let c = 0; c < headCols; c++) {
+              const ai = (r * headCols + c) * 4;
+              const a = data[ai + 3];
+              if (a <= 14) continue;            // face only
+              const cell = headCells[r * headCols + c];
+              if (!cell) continue;
+              const R = data[ai], G = data[ai + 1], B = data[ai + 2];
+              if (B - R > 70 && B > 120) {       // blue eye
+                fg.fillStyle = EYE_BLUES[((cell.phase * 131) | 0) % EYE_BLUES.length];
+                fg.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+                continue;
+              }
+              const lum = (R * 0.299 + G * 0.587 + B * 0.114) / 255;
+              let norm = (0.84 - lum) / 0.44;
+              if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
+              let bright = 0.10 + Math.pow(norm, 0.86) * 1.30;
+              const aw = Math.min(1, a / 180);
+              bright *= aw;
+              if (bright > 1) bright = 1;
+              if (bright < 0.085) continue;
+              const colIdx = Math.min(7, Math.floor(bright * (lastColor + 1)));
+              fg.fillStyle = FACE_COLORS[colIdx];
+              fg.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+            }
+          }
+        }
+
+        // ---- Cached background: redraw only a slice of rows per frame ----
+        if (!fmBg || fmBg.width !== canvas.width || fmBg.height !== canvas.height) {
+          if (!fmBg) { fmBg = document.createElement('canvas'); fmBgCtx = fmBg.getContext('2d'); }
+          fmBg.width = canvas.width; fmBg.height = canvas.height;
+          fmBgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          fmDrawBgBand(now, 0, headRows);   // full draw once
+          fmBgRow = 0;
+        } else {
+          const band = Math.max(2, Math.ceil(headRows / 14));
+          fmDrawBgBand(now, fmBgRow, fmBgRow + band);
+          fmBgRow += band; if (fmBgRow >= headRows) fmBgRow = 0;
+        }
+
+        // Composite every frame: background, then the cached face, then streams.
+        ctx.drawImage(fmBg, 0, 0, width, height);
+        ctx.drawImage(fmFace, 0, 0, width, height);
+        drawStreamsOverlay(now);
+        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+      }
+
+      initFace();
+      window.addEventListener('resize', resizeFace);
+
+      // L→R data flow streams (background for head mode)
+      const STREAM_COUNT = 55;
+      let streams = null;
+      function newStream() {
+        return {
+          x: -8 - Math.random() * 90,
+          y: (Math.random() * rows) | 0,
+          speed: 0.25 + Math.random() * 0.9,
+          length: 6 + ((Math.random() * 18) | 0),
+          intensity: 0.18 + Math.random() * 0.32
+        };
+      }
+      function ensureStreams() {
+        if (!streams || streams.length !== STREAM_COUNT) {
+          streams = new Array(STREAM_COUNT);
+          for (let i = 0; i < STREAM_COUNT; i++) streams[i] = newStream();
+        }
+      }
+
+      function drawHead(now) {
+        // White wipe
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // Switch to dense-grid font for this mode
+        ctx.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+
+        if (headError) {
+          ctx.fillStyle = '#94a8d6';
+          ctx.fillText(headError, 24, height * 0.5);
+          return;
+        }
+
+        // ---- Render head to offscreen ----
+        let imgData = null;
+        let hasHead = false;
+        if (headReady && renderer3d) {
+          if (off3dW !== headCols * SS || off3dH !== headRows * SS) resize3D();
+          headGroup.rotation.y = Math.sin(now * 0.00035) * 0.32;
+          headGroup.rotation.x = Math.sin(now * 0.00028 + 1.3) * 0.07;
+          renderer3d.render(scene3d, camera3d);
+          offCtx2d.clearRect(0, 0, off3dW, off3dH);
+          offCtx2d.drawImage(renderer3d.domElement, 0, 0, off3dW, off3dH);
+          imgData = offCtx2d.getImageData(0, 0, off3dW, off3dH).data;
+          hasHead = true;
+        }
+
+        // Slow char shimmer on dense head cells
+        const swapCount = Math.floor(headCells.length * 0.003);
+        for (let i = 0; i < swapCount; i++) {
+          const idx = (Math.random() * headCells.length) | 0;
+          if (headCells[idx]) headCells[idx].ch = pickChar();
+        }
+
+        const lastColor = COLORS.length - 1;
+        const ssW = off3dW;
+        const HEAD_GAIN = 0.62;
+        const HEAD_GAMMA = 0.80;
+        const CAP = 0.82;
+
+        for (let r = 0; r < headRows; r++) {
+          const py = r * HEAD_CHAR_H + HEAD_CHAR_H * 0.5;
+          for (let c = 0; c < headCols; c++) {
+            const px = c * HEAD_CHAR_W + HEAD_CHAR_W * 0.5;
+            const cell = headCells[r * headCols + c];
+            if (!cell) continue;
+
+            // Background: gentle wavy fill drifting L→R
+            const w1 = 0.5 + 0.5 * Math.sin(px * 0.022 - now * 0.0005 + py * 0.012);
+            const w2 = 0.5 + 0.5 * Math.sin(px * 0.010 - now * 0.0003 - py * 0.008);
+            const sh = 0.5 + 0.5 * Math.sin(cell.phase + now * 0.0011);
+            let bright = 0.09 + w1 * 0.08 + w2 * 0.04 + sh * 0.02;
+
+            // Head contribution (2x supersampled per cell)
+            if (hasHead) {
+              const sx = c * SS;
+              const sy = r * SS;
+              const i0 = (sy * ssW + sx) * 4;
+              const i1 = i0 + 4;
+              const i2 = ((sy + 1) * ssW + sx) * 4;
+              const i3 = i2 + 4;
+              const aSum = imgData[i0 + 3] + imgData[i1 + 3] + imgData[i2 + 3] + imgData[i3 + 3];
+              if (aSum > 24) {
+                const lSum =
+                  (imgData[i0] + imgData[i1] + imgData[i2] + imgData[i3]) * 0.299 +
+                  (imgData[i0 + 1] + imgData[i1 + 1] + imgData[i2 + 1] + imgData[i3 + 1]) * 0.587 +
+                  (imgData[i0 + 2] + imgData[i1 + 2] + imgData[i2 + 2] + imgData[i3 + 2]) * 0.114;
+                let lum = lSum / (4 * 255);
+                lum = Math.pow(lum, HEAD_GAMMA);
+                const alphaW = Math.min(1, aSum / 800);
+                bright += lum * HEAD_GAIN * alphaW;
+              }
+            }
+
+            if (bright > CAP) bright = CAP;
+            if (bright < 0.10) continue;
+
+            const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+            ctx.fillStyle = COLORS[colIdx];
+            ctx.fillText(cell.ch, c * HEAD_CHAR_W, r * HEAD_CHAR_H);
+          }
+        }
+
+        if (!hasHead) {
+          ctx.fillStyle = '#aebbd9';
+          ctx.fillText('loading head model…', 24, height * 0.5);
+        }
+
+        // Restore cursor-mode font for any subsequent draws
+        ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+      }
+
+      // ------------------------------------------------------------------
+      // MODE 3 — data flowing INWARD and coalescing at a center point
+      // (Coalesce: transforming/coalescing large amounts of data into one)
+      // ------------------------------------------------------------------
+      function drawCoalesce(now, follow) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        if (now - lastSnippetStamp > 1800) { stampSnippet(); lastSnippetStamp = now; }
+        updateMouseTrail(now); // mouse blob rides on top of the spiral
+
+        // Spiral center: fixed (spiral in) or slowly drifting to the cursor (spiral follow)
+        let cxp, cyp;
+        if (follow) {
+          if (scx < 0) { scx = width * 0.5; scy = height * 0.5; }
+          const tx = targetX > -1000 ? targetX : width * 0.5;
+          const ty = targetY > -1000 ? targetY : height * 0.5;
+          scx += (tx - scx) * 0.015; // slow drift toward the mouse
+          scy += (ty - scy) * 0.015;
+          cxp = scx; cyp = scy;
+        } else {
+          cxp = width * 0.5; cyp = height * 0.5;
+        }
+        const maxR = Math.hypot(width, height) * 0.5;
+        const lastColor = COLORS.length - 1;
+        const rot = -now * 0.00008;   // slow overall rotation of the spiral field (reversed)
+
+        // Continuous SPIRAL-WAVE field flowing inward — broad waves of data
+        // sweeping toward the center (rather than tiny discrete beads). The
+        // angle term makes the wavefronts spiral; the time term moves them in.
+        for (let r = 0; r < rows; r++) {
+          const py = r * CHAR_H + CHAR_H * 0.5;
+          for (let c = 0; c < cols; c++) {
+            const idx = r * cols + c;
+            const cell = cells[idx];
+            if (!cell) continue;
+            const px = c * CHAR_W + CHAR_W * 0.5;
+            const dx = px - cxp, dy = py - cyp;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ang = Math.atan2(dy, dx);
+
+            // Nearly-straight (slightly bent) radial lines, with brightness
+            // pulses flowing INWARD along them — linear inflow toward the
+            // center, not a spinning spiral.
+            const arms = 16;
+            const bend = 0.0011;                                 // small = straighter lines
+            const spoke = 0.6 + 0.4 * Math.sin((ang + dist * bend + rot) * arms); // softer arm gaps
+            // Warp the inward bands with angular + spatial undulation so they
+            // come in organically instead of as perfect circles.
+            const warp = Math.sin(ang * 4 + now * 0.0009) * 28
+                       + Math.sin(ang * 7 - now * 0.0006) * 17
+                       + Math.sin(px * 0.026 + py * 0.022 + now * 0.0007) * 14;
+            // STAGGER the inward bands per-arm (offset by angle) so they're not
+            // uniform concentric rings, and SOFTEN them so the banding is gentle
+            // and slow rather than harsh.
+            const inflowPhase = (dist + warp) * 0.017 + now * 0.0020 + Math.sin((ang + rot) * arms) * 1.3;
+            const inflow = 0.55 + 0.30 * Math.sin(inflowPhase); // gentle band contrast
+            const conv = Math.max(0, 1 - dist / (maxR * 1.15));  // brighter toward center
+            let bright = 0.05 + spoke * inflow * (0.13 + conv * 0.30);
+            bright += 0.02 * Math.sin(cell.phase + now * 0.0009); // gentle life
+
+            // Mouse blob rides on top — amorphous, cursor-style (light-blue
+            // base + sparkle glints) rather than a solid round bright-blue blob.
+            const cluster = clusterAt(px, py, r, c, now, false);
+            bright += cluster * 0.9;
+
+            // Char turnover — faster inside the blob
+            const swapProb = cell.swap * 0.35 + cluster * 0.18;
+            if (cell.stick > 0) cell.stick--;
+            else if (Math.random() < swapProb) cell.ch = pickChar();
+
+            if (bright < 0.08) continue;
+            let style;
+            if (cluster > 0.05) {
+              // Mouse blob = flame (bright/light core → deeper, fainter edge),
+              // matching cursor mode.
+              style = flameStyle(cluster, px, py, now, cell.phase);
+            } else {
+              const colIdx = Math.min(lastColor, Math.floor(bright * (lastColor + 1)));
+              style = COLORS[colIdx];
+            }
+            ctx.fillStyle = style;
+            ctx.fillText(cell.ch, c * CHAR_W, r * CHAR_H);
+          }
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // DATA STREAMS — straight horizontal "code rain" running THROUGH the same
+      // dense character grid as the matrix face (same cell size + same glyphs),
+      // flowing left to right. Each stream lights up one grid row as it passes.
+      // ------------------------------------------------------------------
+      let dStreams = null;
+      const D_STREAM_N = 92;                 // twice as many
+      function newDStream(startCol) {
+        const tail = 60 + ((Math.random() * 90) | 0);   // very long tails (grid cells)
+        return {
+          row: (Math.random() * Math.max(1, headRows)) | 0,                    // fixed grid row
+          hc: startCol !== undefined ? startCol : -tail - Math.random() * 60,  // head column
+          speed: 0.5 + Math.random() * 1.1,              // grid cells per frame (2x faster)
+          tail: tail
+        };
+      }
+      function ensureDStreams() {
+        if (!dStreams || dStreams.length !== D_STREAM_N) {
+          dStreams = new Array(D_STREAM_N);
+          for (let i = 0; i < D_STREAM_N; i++) dStreams[i] = newDStream((Math.random() * (headCols + 120)) - 60);
+        }
+      }
+      // Streams drawn on the SAME grid as the face (HEAD_CHAR_W/H + HEAD_FONT_SIZE),
+      // reusing the grid's own characters, so they read as part of the matrix
+      // rather than a separate scrolling layer. Bright head, long fading tail.
+      function drawStreamsOverlay(now) {
+        ensureDStreams();
+        ctx.font = HEAD_FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+        const streamLast = STREAM_COLORS.length - 1;
+        for (let si = 0; si < D_STREAM_N; si++) {
+          const s = dStreams[si];
+          s.hc += s.speed;
+          if (s.hc - s.tail > headCols + 2) { dStreams[si] = newDStream(); continue; }
+          const gr = s.row;
+          const baseY = gr * HEAD_CHAR_H;
+          const headC = s.hc | 0;
+          for (let i = 0; i < s.tail; i++) {
+            const c = headC - i;
+            if (c < 0) break;            // rest of the tail is off the left edge
+            if (c >= headCols) continue; // head not on-screen yet
+            const t = 1 - i / s.tail;    // 1 at the bright head, 0 at the tail tip
+            const alpha = t * t * 0.95;
+            if (alpha < 0.03) continue;
+            const cell = headCells[gr * headCols + c];
+            if (!cell) continue;
+            // Very front = bright Get Demo blue, fading quickly into the muted ramp.
+            let col;
+            if (i < STREAM_HEAD.length) col = STREAM_HEAD[i];
+            else col = STREAM_COLORS[Math.min(streamLast, (((1 - t) * STREAM_COLORS.length) | 0))];
+            ctx.fillStyle = col + alpha.toFixed(3) + ')';
+            ctx.fillText(cell.ch, c * HEAD_CHAR_W, baseY);
+          }
+        }
+      }
+
+      function draw(now) {
+        drawFaceMatrix(now);
+        requestAnimationFrame(draw);
+      }
+
+      // Locked to the face-matrix hero (production page — no dev nav / slider).
+      // Coalesce content overlay always on; head size baked at 1.45.
+      document.getElementById('hero').classList.remove('hidden');
+      document.body.style.cursor = 'default';
+      mzZoom = 2.8 / 1.45;
+      mzLookY = -0.126 - 0.0674 * mzZoom;
+      resizeFace();
+      window.__captureFace = () => {
+        if (!faceReady) return null;
+        faceCamera.position.set(0, 0, mzZoom);
+        faceCamera.lookAt(0, mzLookY, 0);
+        updateFaceAnim(performance.now());
+        faceRenderer.render(faceScene, faceCamera);
+        const src = faceRenderer.domElement;
+        const w = 760, h = Math.round(w * src.height / src.width);
+        const t = document.createElement('canvas'); t.width = w; t.height = h;
+        t.getContext('2d').drawImage(src, 0, 0, w, h);
+        return t.toDataURL('image/png');
+      };
+      requestAnimationFrame(draw);
+    }
+  </script>
+</body>
+</html>
