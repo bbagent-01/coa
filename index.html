@@ -119,14 +119,6 @@
     .nav .model-picker { display: none; gap: 12px; align-items: center; }
     .nav .model-picker button { font-size: 10px; opacity: 0.85; }
   </style>
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body>
   <canvas id="ascii"></canvas>
@@ -161,11 +153,7 @@
   </div>
 
   <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    // Baked build: no three.js — the face is a pre-rendered static image.
 
     {
       const canvas = document.getElementById('ascii');
@@ -1045,7 +1033,6 @@
       }
 
       function drawFaceMatrix(now) {
-        if (faceError || !faceRenderer) return;
 
         // The ASCII face (WebGL render + readback + ~thousands of glyph fills)
         // is the expensive part, but the face barely moves frame-to-frame — so
@@ -1062,14 +1049,8 @@
         const regen = faceLayerNew || (fmFaceFrame % FACE_EVERY === 0);
         fmFaceFrame++;
 
-        if (regen) {
-          syncFaceRenderer(FACE_RATIO_MATRIX);
-          faceCamera.position.set(0, 0, mzZoom);  // zoomed-in framing for the matrix face
-          faceCamera.lookAt(0, mzLookY, 0);
-          updateFaceAnim(now);
-          faceRenderer.render(faceScene, faceCamera);
-
-          // Downsample the 3D render into the dense ASCII grid, then sample it.
+        if (regen && faceImgReady) {
+          // Sample the BAKED face image into the dense ASCII grid (no WebGL).
           if (!faceMatrixOff) {
             faceMatrixOff = document.createElement('canvas');
             faceMatrixCtx = faceMatrixOff.getContext('2d', { willReadFrequently: true });
@@ -1079,7 +1060,7 @@
             faceMatrixOff.height = Math.max(2, headRows);
           }
           faceMatrixCtx.clearRect(0, 0, headCols, headRows);
-          faceMatrixCtx.drawImage(faceRenderer.domElement, 0, 0, headCols, headRows);
+          faceMatrixCtx.drawImage(faceImg, 0, 0, headCols, headRows);
           const data = faceMatrixCtx.getImageData(0, 0, headCols, headRows).data;
 
           // Occasional char turnover for liveliness
@@ -1142,7 +1123,11 @@
         ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
       }
 
-      initFace();
+      // Baked face: load the pre-rendered face image (no 3D / three.js).
+      const faceImg = new Image();
+      let faceImgReady = false;
+      faceImg.onload = () => { faceImgReady = true; };
+      faceImg.src = 'face.png';
       window.addEventListener('resize', resizeFace);
 
       // L→R data flow streams (background for head mode)
