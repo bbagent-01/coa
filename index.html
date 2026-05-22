@@ -168,8 +168,8 @@
     <input type="range" id="zoomSlider" min="1" max="3.2" step="0.05" value="1.45">
     <span class="val" id="zoomVal">1.45</span>
     <span class="grp">ascii</span>
-    <input type="range" id="asciiSlider" min="3" max="14" step="1" value="8">
-    <span class="val" id="asciiVal">8</span>
+    <input type="range" id="asciiSlider" min="3" max="14" step="1" value="7">
+    <span class="val" id="asciiVal">7</span>
   </div>
 
   <script type="module">
@@ -299,7 +299,7 @@
       let HEAD_CHAR_W = 4;
       let HEAD_CHAR_H = 6;
       let HEAD_FONT_SIZE = 6;
-      let asciiRef = 8;        // ASCII cell size at the reference width; auto-scaled per screen
+      let asciiRef = 7;        // ASCII cell size at desktop width; eased-scaled per screen
       let headCols = 0, headRows = 0;
       let headCells = null;
 
@@ -361,9 +361,11 @@
         ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
         ctx.textBaseline = 'top';
         buildCells();
-        // Screen-adaptive ASCII cell size: keep ~constant character density and
-        // workload across screens (asciiRef = cell size at the reference width).
-        HEAD_CHAR_H = Math.max(3, Math.min(13, Math.round(asciiRef * width / 1920)));
+        // Screen-adaptive ASCII cell size — EASED: full size on large desktops
+        // (>=1920) and shrinking only gently as the screen narrows, so it doesn't
+        // get too fine too fast. asciiRef = the cell size at desktop width.
+        const sc = 0.6 + 0.4 * Math.min(1, width / 1920);
+        HEAD_CHAR_H = Math.max(3, Math.min(13, Math.round(asciiRef * sc)));
         HEAD_CHAR_W = Math.max(2, Math.round(HEAD_CHAR_H * 0.667));
         HEAD_FONT_SIZE = HEAD_CHAR_H;
         // Head grid (denser) — rebuilt when canvas resizes
