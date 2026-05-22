@@ -17,6 +17,8 @@
     }
     canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
     #face { display: none; }
+    @keyframes asciiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    #ascii { animation: asciiFadeIn 0.9s ease both; }
     /* Radial fade: face center is clear, edges dissolve into the flat
        background (hides ears + removes the hard silhouette). Color MUST
        match the WebGL scene background. */
@@ -300,6 +302,7 @@
       let HEAD_CHAR_H = 6;
       let HEAD_FONT_SIZE = 6;
       let asciiRef = 7;        // ASCII cell size at desktop width; eased-scaled per screen
+      let headRef = 1.45;      // head size at desktop width; eased-scaled per screen
       let headCols = 0, headRows = 0;
       let headCells = null;
 
@@ -368,6 +371,7 @@
         HEAD_CHAR_H = Math.max(3, Math.min(13, Math.round(asciiRef * sc)));
         HEAD_CHAR_W = Math.max(2, Math.round(HEAD_CHAR_H * 0.667));
         HEAD_FONT_SIZE = HEAD_CHAR_H;
+        applyHeadFraming();   // screen-adaptive head zoom (a touch smaller on narrow screens)
         // Head grid (denser) — rebuilt when canvas resizes
         headCols = Math.ceil(width / HEAD_CHAR_W) + 1;
         headRows = Math.ceil(height / HEAD_CHAR_H) + 1;
@@ -1044,6 +1048,8 @@
       // Cached faint background field (so we don't redraw ~80k chars/frame).
       let fmBg = null, fmBgCtx = null, fmBgRow = 0;
       let fmFace = null, fmFaceCtx = null, fmFaceFrame = 0;  // cached ASCII-face layer
+      let fmFaceOld = null, fmFaceOldCtx = null;             // static snapshot for the static→live cross-fade
+      let faceSwapT = 0, liveActive = false;                 // cross-fade timing
       function fmDrawBgBand(now, r0, r1) {
         const g = fmBgCtx;
         const lastColor = FACE_COLORS.length - 1;
@@ -1085,6 +1091,14 @@
           let faceSrc;
           if (faceReady) {
             // Live cursor-tracking 3D face, once three.js + the model have loaded.
+            if (!liveActive) {
+              // First live frame — snapshot the static face to cross-fade from.
+              if (!fmFaceOld) { fmFaceOld = document.createElement('canvas'); fmFaceOldCtx = fmFaceOld.getContext('2d'); }
+              if (fmFaceOld.width !== fmFace.width || fmFaceOld.height !== fmFace.height) { fmFaceOld.width = fmFace.width; fmFaceOld.height = fmFace.height; }
+              fmFaceOldCtx.clearRect(0, 0, fmFaceOld.width, fmFaceOld.height);
+              fmFaceOldCtx.drawImage(fmFace, 0, 0);
+              faceSwapT = now; liveActive = true;
+            }
             faceDtf = lastFaceT ? Math.min(4, Math.max(0.25, (now - lastFaceT) / 66.667)) : 1;
             lastFaceT = now;
             syncFaceRenderer(FACE_RATIO_MATRIX);
@@ -1166,6 +1180,12 @@
         // Composite every frame: background, then the cached face, then streams.
         ctx.drawImage(fmBg, 0, 0, width, height);
         ctx.drawImage(fmFace, 0, 0, width, height);
+        // Cross-fade the static face out as the live 3D face takes over (no snap).
+        if (faceSwapT && fmFaceOld) {
+          const xf = (now - faceSwapT) / 600;
+          if (xf < 1) { ctx.globalAlpha = 1 - xf; ctx.drawImage(fmFaceOld, 0, 0, width, height); ctx.globalAlpha = 1; }
+          else faceSwapT = 0;
+        }
         drawStreamsOverlay(now);
         ctx.font = FONT_SIZE + 'px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
       }
@@ -1462,11 +1482,17 @@
       const zoomVal = document.getElementById('zoomVal');
       const asciiSlider = document.getElementById('asciiSlider');
       const asciiVal = document.getElementById('asciiVal');
-      function applyZoom() {
-        const z = parseFloat(zoomSlider.value);
-        mzZoom = 2.8 / z;
+      function applyHeadFraming() {
+        // Head a touch smaller on narrow screens (eased), full size on desktops.
+        const hs = 0.82 + 0.18 * Math.min(1, width / 1920);
+        mzZoom = 2.8 / (headRef * hs);
         mzLookY = -0.126 - 0.0674 * mzZoom;
-        zoomVal.textContent = z.toFixed(2);
+      }
+      function applyZoom() {
+        headRef = parseFloat(zoomSlider.value);
+        zoomVal.textContent = headRef.toFixed(2);
+        applyHeadFraming();
+        fmFace = null; fmFaceFrame = 0;   // re-render the face at the new zoom
       }
       function applyAsciiSize() {
         asciiRef = parseInt(asciiSlider.value, 10);
