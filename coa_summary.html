@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>coa — project summary</title>
+<style>
+  :root{
+    --bg:#FFFFFF; --bg2:#F8F9FA; --bg3:#F1F3F5;
+    --ink:#1A1D21; --ink2:#6B7280; --ink3:#9CA3AF;
+    --border:#E5E7EB; --accent:#2563EB;
+    --green:#059669; --greenbg:#ECFDF5; --amber:#D97706; --amberbg:#FFFBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg2);color:var(--ink);font-family:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55;padding:40px 20px;}
+  .wrap{max-width:780px;margin:0 auto;}
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:28px 30px;margin-bottom:18px;}
+  h1{font-size:28px;font-weight:800;letter-spacing:-0.02em;}
+  h2{font-size:16px;font-weight:700;margin-bottom:12px;letter-spacing:-0.01em;}
+  .sub{color:var(--ink2);font-size:15px;margin-top:6px;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  p{color:var(--ink);font-size:14.5px;margin-bottom:10px;}
+  ul{margin:0 0 4px 18px;}
+  li{font-size:14px;margin-bottom:6px;color:var(--ink);}
+  .muted{color:var(--ink2);}
+  code,.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:1px 6px;}
+  table{width:100%;border-collapse:collapse;margin-top:6px;}
+  th,td{text-align:left;padding:9px 10px;font-size:13.5px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{color:var(--ink2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;}
+  td:first-child{white-space:nowrap;font-weight:600;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--greenbg);color:var(--green);border:1px solid #A7F3D0;}
+  .note{background:var(--amberbg);border:1px solid #FDE68A;border-radius:8px;padding:12px 14px;font-size:13.5px;color:#92400E;margin-top:10px;}
+  .label{font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="label">Project Summary</div>
+    <h1>coa — Coalesce ASCII Hero</h1>
+    <p class="sub">An interactive ASCII / “matrix” hero animation built for Coalesce (coalesce.io). White background, blue characters, mouse-reactive. <span class="pill">Live</span></p>
+    <p style="margin-top:12px;"><strong>Live:</strong> <a href="https://coa.bbase.ai">coa.bbase.ai</a> &nbsp;·&nbsp; <strong>Folder:</strong> <code>~/Claude/Projects/coa</code> &nbsp;·&nbsp; <strong>Repo:</strong> <code>bbagent-01/coa</code></p>
+  </div>
+
+  <div class="card">
+    <h2>The five modes</h2>
+    <p class="muted" style="font-size:13.5px;">Switch with the nav in the top-left. The “content” toggle overlays the Coalesce hero copy on top of any mode.</p>
+    <table>
+      <tr><th>Mode</th><th>What it does</th></tr>
+      <tr><td>01 · cursor</td><td>An amorphous, constantly-shifting mouse blob with bright-blue (#2962ff) sparkle glints, over a faint light-blue swirl background.</td></tr>
+      <tr><td>02 · face</td><td>A smooth, ethereal 3D face. Blue eyes, a subtle warm/knowing expression, slow blink. Head and eyes follow the cursor slowly (never cross, never jump). Eyes sit level with the “Get Demo” button; edges dissolve into the background.</td></tr>
+      <tr><td>03 · spiral in</td><td>Data spiralling inward along bent, organic lines toward the center, with a round, solid, bright-blue mouse blob and a long trailing tail riding on top.</td></tr>
+      <tr><td>04 · face matrix</td><td>The same face, but built entirely out of moving code characters with deep blue shading and blue eyes. A “HEAD SIZE” slider scales the head (eyes always stay flanking the headline). Defaults to a ~2× zoom with the eyes on either side of the H1.</td></tr>
+      <tr><td>05 · spiral follow</td><td>Same as “spiral in,” but the whole spiral slowly drifts so its center moves toward wherever the mouse is.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Hero overlay (“content” toggle)</h2>
+    <ul>
+      <li>Headline: <em>“Humans and agents delivering data, together.”</em></li>
+      <li>Subtext, a blue <strong>Get Demo</strong> button, G2 (4.8) + Gartner (4.9) rating cards, and a client-logo strip.</li>
+      <li>Sits centered over whichever animation is active; the animation still reacts to the mouse behind it.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Under the hood</h2>
+    <ul>
+      <li><strong>One file:</strong> <code>index.html</code> — a static page (vanilla JavaScript + three.js for the 3D face).</li>
+      <li><strong>Deploy:</strong> every push to the repo auto-publishes to <code>coa.bbase.ai</code> within ~30 seconds (Cloudflare Pages). No build step.</li>
+      <li><strong>The face</strong> is a real 3D head scan rendered live; modes 02 and 04 share the exact same animation, just drawn two different ways (smooth surface vs. code characters).</li>
+      <li><strong>The cursor blob</strong> is shared between the cursor and spiral modes — round &amp; solid in the spirals, amorphous in cursor mode.</li>
+    </ul>
+    <div class="note"><strong>Performance:</strong> “04 · face matrix” is the heaviest mode (it draws a lot every frame). Its background is cached to keep it smooth. If it ever feels slow on a given machine, the fix is to make the characters slightly larger/fewer.</div>
+  </div>
+
+  <div class="card">
+    <h2>Where it stands &amp; what’s next</h2>
+    <p>Everything above is built and live. Open items / likely next tweaks:</p>
+    <ul>
+      <li>Dial in the “spiral follow” drift speed and the blob size / trail length to taste.</li>
+      <li>Decide the final <strong>default mode</strong> the live hero should land on.</li>
+      <li>Optional: a polish pass on matrix performance if needed on lower-end devices.</li>
+    </ul>
+    <p class="muted" style="font-size:13px;margin-top:8px;">Note: this file is a local reference and is not part of the published site.</p>
+  </div>
+
+</div>
+</body>
+</html>
