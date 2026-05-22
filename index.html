@@ -76,14 +76,15 @@
     }
     #heroToggle.active { color: #2547d9; }
     #sizeCtrl {
-      position: fixed; left: 20px; top: 58px; z-index: 3; display: none;
-      align-items: center; gap: 10px;
-      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b8ad0;
-      background: rgba(255,255,255,0.88); border: 1px solid #e2e7f2; border-radius: 8px;
-      padding: 7px 12px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+      position: fixed; left: 20px; bottom: 18px; z-index: 4; display: flex;
+      align-items: center; gap: 9px;
+      font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: #6b8ad0;
+      background: rgba(255,255,255,0.92); border: 1px solid #e2e7f2; border-radius: 8px;
+      padding: 7px 13px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
     }
-    #sizeCtrl input[type="range"] { width: 130px; accent-color: #2962ff; cursor: pointer; }
-    #sizeVal { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #2962ff; min-width: 34px; text-align: right; }
+    #sizeCtrl input[type="range"] { width: 96px; accent-color: #2962ff; cursor: pointer; }
+    #sizeCtrl .val { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #2962ff; min-width: 30px; text-align: right; }
+    #sizeCtrl .grp { margin-left: 8px; }
     .label {
       position: fixed; left: 20px; bottom: 18px;
       font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -160,6 +161,15 @@
       <img class="badge" src="https://coalesce.io/wp-content/uploads/2026/02/gartner-feb.png" alt="Gartner Peer Insights: 4.9 out of 5 stars, as of Feb 1, 2026">
     </div>
     <div class="logos">1-800-Flowers · Alliant · Caesars · CKE · Denny's · Heraeus · Isuzu · Johnson Controls · PET IQ · Q2 · Toyota · United · Vanquis · Veolia · Vodafone</div>
+  </div>
+
+  <div id="sizeCtrl">
+    <span>head</span>
+    <input type="range" id="zoomSlider" min="1" max="3.2" step="0.05" value="1.45">
+    <span class="val" id="zoomVal">1.45</span>
+    <span class="grp">ascii</span>
+    <input type="range" id="asciiSlider" min="3" max="14" step="1" value="6">
+    <span class="val" id="asciiVal">6</span>
   </div>
 
   <script type="module">
@@ -286,9 +296,9 @@
       const CHAR_H = 9;
       const FONT_SIZE = 9;
       // ---- Denser grid for head mode (much finer detail) ----
-      const HEAD_CHAR_W = 4;
-      const HEAD_CHAR_H = 6;
-      const HEAD_FONT_SIZE = 6;
+      let HEAD_CHAR_W = 4;
+      let HEAD_CHAR_H = 6;
+      let HEAD_FONT_SIZE = 6;
       let headCols = 0, headRows = 0;
       let headCells = null;
 
@@ -1416,8 +1426,32 @@
       // Coalesce content overlay always on; head size baked at 1.45.
       document.getElementById('hero').classList.remove('hidden');
       document.body.style.cursor = 'default';
-      mzZoom = 2.8 / 1.45;
-      mzLookY = -0.126 - 0.0674 * mzZoom;
+
+      // Tuning sliders: head zoom (camera framing) + ASCII cell size. Bigger
+      // ASCII = fewer characters per frame = faster (trades detail for speed).
+      const zoomSlider = document.getElementById('zoomSlider');
+      const zoomVal = document.getElementById('zoomVal');
+      const asciiSlider = document.getElementById('asciiSlider');
+      const asciiVal = document.getElementById('asciiVal');
+      function applyZoom() {
+        const z = parseFloat(zoomSlider.value);
+        mzZoom = 2.8 / z;
+        mzLookY = -0.126 - 0.0674 * mzZoom;
+        zoomVal.textContent = z.toFixed(2);
+      }
+      function applyAsciiSize() {
+        const h = parseInt(asciiSlider.value, 10);
+        HEAD_CHAR_H = h;
+        HEAD_CHAR_W = Math.max(2, Math.round(h * 0.667));
+        HEAD_FONT_SIZE = h;
+        asciiVal.textContent = h;
+        fmBg = null; fmFace = null; faceMatrixOff = null; fmFaceFrame = 0; dStreams = null;
+        resize();
+      }
+      zoomSlider.addEventListener('input', applyZoom);
+      asciiSlider.addEventListener('input', applyAsciiSize);
+      applyZoom();
+      applyAsciiSize();
       resizeFace();
       requestAnimationFrame(draw);
     }
