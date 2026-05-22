@@ -301,6 +301,7 @@
       let HEAD_FONT_SIZE = 6;
       let asciiRef = 7;        // ASCII cell size at desktop width; eased-scaled per screen
       let headRef = 1.45;      // head size at desktop width; eased-scaled per screen
+      let mzZoom = 1.4, mzLookY = -0.22;   // matrix-face camera framing (set by applyHeadFraming)
       let headCols = 0, headRows = 0;
       let headCells = null;
 
@@ -772,9 +773,6 @@
       // ------------------------------------------------------------------
       const faceCanvasEl = document.getElementById('face');
       let faceRenderer = null, faceScene = null, faceCamera = null;
-      // Matrix-face framing (independent of the smooth face): closer = bigger,
-      // and lookY auto-tracks zoom so the eyes stay flanking the H1.
-      let mzZoom = 1.4, mzLookY = -0.22;
       let faceRoot = null, faceMesh = null;
       let faceReady = false, faceError = null;
       let faceCanvasW = 0, faceCanvasH = 0;
