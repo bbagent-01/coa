@@ -168,8 +168,8 @@
     <input type="range" id="zoomSlider" min="1" max="3.2" step="0.05" value="1.45">
     <span class="val" id="zoomVal">1.45</span>
     <span class="grp">ascii</span>
-    <input type="range" id="asciiSlider" min="3" max="14" step="1" value="6">
-    <span class="val" id="asciiVal">6</span>
+    <input type="range" id="asciiSlider" min="3" max="14" step="1" value="8">
+    <span class="val" id="asciiVal">8</span>
   </div>
 
   <script type="module">
@@ -964,9 +964,9 @@
           const targetPitch = ny * 0.15 + idlePitch;
           // Ease toward target but CLAMP the per-frame change so the head never
           // jumps or moves fast — even when the cursor re-enters far away.
-          const MAX_STEP = 0.0024;                      // radians/frame ceiling
-          let dYaw = (targetYaw - gazeYaw) * 0.04;
-          let dPitch = (targetPitch - gazePitch) * 0.04;
+          const MAX_STEP = 0.0038;                      // radians/frame ceiling (a bit snappier)
+          let dYaw = (targetYaw - gazeYaw) * 0.058;
+          let dPitch = (targetPitch - gazePitch) * 0.058;
           if (dYaw > MAX_STEP) dYaw = MAX_STEP; else if (dYaw < -MAX_STEP) dYaw = -MAX_STEP;
           if (dPitch > MAX_STEP) dPitch = MAX_STEP; else if (dPitch < -MAX_STEP) dPitch = -MAX_STEP;
           gazeYaw += dYaw;
@@ -975,8 +975,8 @@
 
           // Smoothed eye-look (drives the pupils) — clamped so the eyes glide
           // and never snap when the cursor jumps or re-enters.
-          let deh = (nx - eyeLook.h) * 0.05; if (deh > 0.012) deh = 0.012; else if (deh < -0.012) deh = -0.012;
-          let dev = (ny - eyeLook.v) * 0.05; if (dev > 0.012) dev = 0.012; else if (dev < -0.012) dev = -0.012;
+          let deh = (nx - eyeLook.h) * 0.07; if (deh > 0.017) deh = 0.017; else if (deh < -0.017) deh = -0.017;
+          let dev = (ny - eyeLook.v) * 0.07; if (dev > 0.017) dev = 0.017; else if (dev < -0.017) dev = -0.017;
           eyeLook.h += deh;
           eyeLook.v += dev;
 
